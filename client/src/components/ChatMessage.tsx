@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { Message } from "@shared/schema";
-import { Sparkles, User } from "lucide-react";
+import { Sparkles, User, Volume2 } from "lucide-react";
 
 interface ChatMessageProps {
   message: Message;
@@ -9,6 +9,12 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const isAi = message.role === "assistant";
+
+  const speak = () => {
+    const utterance = new SpeechSynthesisUtterance(message.content);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  };
 
   return (
     <motion.div
@@ -28,13 +34,22 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
       <div
         className={cn(
-          "max-w-[80%] md:max-w-[70%] px-6 py-4 rounded-2xl shadow-sm text-base md:text-lg leading-relaxed",
+          "relative group max-w-[80%] md:max-w-[70%] px-6 py-4 rounded-2xl shadow-sm text-base md:text-lg leading-relaxed",
           isAi
             ? "bg-white text-foreground rounded-tl-none border border-secondary/30"
             : "bg-primary text-primary-foreground rounded-tr-none shadow-md shadow-primary/20"
         )}
       >
         <p className="whitespace-pre-wrap">{message.content}</p>
+        {isAi && (
+          <button
+            onClick={speak}
+            className="absolute -right-10 top-2 p-2 text-muted-foreground/40 hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+            title="Read aloud"
+          >
+            <Volume2 size={16} />
+          </button>
+        )}
       </div>
 
       {!isAi && (
