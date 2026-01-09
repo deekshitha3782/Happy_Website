@@ -42,7 +42,7 @@ export async function registerRoutes(
 
       // 4. Call OpenAI
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: [systemMessage, ...messagesForAI],
       });
 
@@ -54,7 +54,11 @@ export async function registerRoutes(
         content: aiContent
       });
 
-      // 6. Return the assistant message
+      // 6. Generate speech if requested (mock for now, or use OpenAI TTS if available)
+      // Since OpenAI AI integration might not support TTS yet, we'll keep it simple.
+      // But for "speech" we can use browser-side TTS or a mock audio response.
+      
+      // 7. Return the assistant message
       res.status(201).json(assistantMessage);
       
     } catch (err) {
