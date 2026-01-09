@@ -3,7 +3,8 @@ import { useMessages, useSendMessage, useClearChat } from "@/hooks/use-messages"
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { TypingIndicator } from "@/components/TypingIndicator";
-import { Trash2, HeartHandshake, CloudSun, Volume2, VolumeX } from "lucide-react";
+import { Trash2, HeartHandshake, CloudSun, Volume2, VolumeX, Phone } from "lucide-react";
+import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -74,6 +75,13 @@ export default function Chat() {
           </div>
           
           <div className="flex items-center gap-2">
+            <Link href="/call">
+              <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-green-500 text-white rounded-xl transition-all shadow-sm hover:bg-green-600 shadow-green-500/20">
+                <Phone size={16} />
+                <span className="hidden sm:inline">Call AI</span>
+              </button>
+            </Link>
+
             <button
               onClick={toggleVoice}
               className={cn(
