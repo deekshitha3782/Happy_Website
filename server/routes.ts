@@ -4,6 +4,65 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import OpenAI from "openai";
+import type { Message } from "@shared/schema";
+
+// Free fallback response generator
+function generateFallbackResponse(userMessage: string, history: Message[]): string {
+  const message = userMessage.toLowerCase();
+  
+  // Greeting responses
+  if (message.match(/^(hi|hello|hey|greetings)/)) {
+    return "Hello! I'm here to listen and support you. How are you feeling today?";
+  }
+  
+  // Sadness/depression keywords
+  if (message.match(/(sad|depressed|down|unhappy|miserable|hopeless|empty)/)) {
+    return "I'm sorry you're feeling this way. Your feelings are valid, and it takes courage to share them. You're not alone in this. Would you like to talk about what's been weighing on you?";
+  }
+  
+  // Anxiety/stress keywords
+  if (message.match(/(anxious|stressed|worried|nervous|overwhelmed|panic|fear)/)) {
+    return "I understand that anxiety and stress can feel overwhelming. Take a deep breath with me. You're safe right now. What's been causing you to feel this way? Sometimes talking about it can help.";
+  }
+  
+  // Loneliness
+  if (message.match(/(lonely|alone|isolated|no one|nobody cares)/)) {
+    return "Feeling lonely can be really tough. I want you to know that you matter, and your feelings matter. Even when it feels like no one is there, you're not truly alone. What would help you feel more connected right now?";
+  }
+  
+  // Tired/exhausted
+  if (message.match(/(tired|exhausted|drained|worn out|can't|can not)/)) {
+    return "It sounds like you're carrying a lot right now. That must be exhausting. Remember, it's okay to rest and take things one step at a time. What's been draining your energy?";
+  }
+  
+  // Anger/frustration
+  if (message.match(/(angry|mad|frustrated|annoyed|irritated)/)) {
+    return "I hear your frustration. Those feelings are completely valid. Sometimes anger is a response to feeling hurt or powerless. What's been making you feel this way?";
+  }
+  
+  // Questions about help
+  if (message.match(/(help|what should|what can|advice|suggest)/)) {
+    return "I'm here to support you. Sometimes the best thing we can do is take small, gentle steps. What feels manageable right now? Even something small like taking a few deep breaths or going for a short walk can help.";
+  }
+  
+  // Thank you
+  if (message.match(/(thank|thanks|appreciate)/)) {
+    return "You're so welcome. I'm glad I can be here for you. How are you feeling now? Is there anything else you'd like to talk about?";
+  }
+  
+  // Default empathetic response
+  const responses = [
+    "I hear you, and I want you to know that your feelings are valid. You're not alone in this. Can you tell me more about what's on your mind?",
+    "Thank you for sharing that with me. It takes strength to open up. I'm here to listen. What would be helpful for you right now?",
+    "I understand this is difficult. You're doing the best you can, and that's enough. What's been weighing on you?",
+    "Your feelings matter, and I'm glad you're expressing them. Sometimes just talking about it can help. What would make you feel a little better right now?",
+    "I'm here with you through this. You don't have to face it alone. What's been on your mind lately?",
+  ];
+  
+  // Use message length to pick a response (simple hash)
+  const index = userMessage.length % responses.length;
+  return responses[index];
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -56,31 +115,38 @@ export async function registerRoutes(
         content: "You are a compassionate, supportive, and empathetic AI companion. Your goal is to help users who may be feeling depressed, anxious, or down. Listen actively, validate their feelings, offer gentle encouragement, and help them find small, positive steps. Do not be overly clinical. Be warm and human-like. If a user expresses intent of self-harm, gently encourage them to seek professional help and provide resources, but focus on immediate emotional support."
       };
 
-      // 4. Call OpenAI
+      // 4. Call OpenAI or use fallback
       console.log("POST /api/messages - Calling OpenAI API...");
-      if (!openaiApiKey || openaiApiKey === "dummy-key") {
-        throw new Error("OpenAI API key is not configured");
-      }
       
-      let response;
-      try {
-        response = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [systemMessage, ...messagesForAI],
-        });
-      } catch (openaiError: any) {
-        console.error("OpenAI API error:", openaiError);
-        if (openaiError?.status === 429) {
-          throw new Error("429 You exceeded your current quota, please check your plan and billing details. Visit https://platform.openai.com/account/billing to add payment method.");
+      let aiContent: string;
+      
+      // Try OpenAI first if key is available
+      if (openaiApiKey && openaiApiKey !== "dummy-key") {
+        try {
+          const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [systemMessage, ...messagesForAI],
+          });
+          aiContent = response.choices[0].message.content || "";
+          console.log("POST /api/messages - OpenAI response received, length:", aiContent.length);
+        } catch (openaiError: any) {
+          console.error("OpenAI API error:", openaiError);
+          if (openaiError?.status === 429 || openaiError?.status === 402) {
+            console.log("OpenAI quota exceeded, using free fallback responses");
+            aiContent = generateFallbackResponse(input.content, history);
+          } else if (openaiError?.status === 401) {
+            throw new Error("Invalid OpenAI API key. Please check your API key in Render environment variables.");
+          } else {
+            // For other errors, use fallback
+            console.log("OpenAI error, using free fallback responses");
+            aiContent = generateFallbackResponse(input.content, history);
+          }
         }
-        if (openaiError?.status === 401) {
-          throw new Error("Invalid OpenAI API key. Please check your API key in Render environment variables.");
-        }
-        throw new Error(openaiError?.message || "OpenAI API error: " + String(openaiError));
+      } else {
+        // No API key, use free fallback
+        console.log("No OpenAI API key, using free fallback responses");
+        aiContent = generateFallbackResponse(input.content, history);
       }
-
-      const aiContent = response.choices[0].message.content || "I'm here for you, but I'm having trouble finding the right words right now.";
-      console.log("POST /api/messages - OpenAI response received, length:", aiContent.length);
 
       // 5. Save assistant message
       const assistantMessage = await storage.createMessage({
