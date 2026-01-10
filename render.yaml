@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: kind-mind-ai
+    env: node
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/index.cjs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: AI_INTEGRATIONS_OPENAI_API_KEY
+        sync: false
+      - key: PORT
+        value: 10000
+    healthCheckPath: /
+
+databases:
+  - name: kindmindai-db
+    databaseName: kindmindai
+    user: kindmindai
+
