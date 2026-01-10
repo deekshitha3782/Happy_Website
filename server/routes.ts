@@ -62,10 +62,22 @@ export async function registerRoutes(
         throw new Error("OpenAI API key is not configured");
       }
       
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [systemMessage, ...messagesForAI],
-      });
+      let response;
+      try {
+        response = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [systemMessage, ...messagesForAI],
+        });
+      } catch (openaiError: any) {
+        console.error("OpenAI API error:", openaiError);
+        if (openaiError?.status === 429) {
+          throw new Error("429 You exceeded your current quota, please check your plan and billing details. Visit https://platform.openai.com/account/billing to add payment method.");
+        }
+        if (openaiError?.status === 401) {
+          throw new Error("Invalid OpenAI API key. Please check your API key in Render environment variables.");
+        }
+        throw new Error(openaiError?.message || "OpenAI API error: " + String(openaiError));
+      }
 
       const aiContent = response.choices[0].message.content || "I'm here for you, but I'm having trouble finding the right words right now.";
       console.log("POST /api/messages - OpenAI response received, length:", aiContent.length);
