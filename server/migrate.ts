@@ -1,5 +1,4 @@
 import pg from "pg";
-import { sql } from "drizzle-orm";
 
 const { Pool } = pg;
 
@@ -15,7 +14,7 @@ async function migrate() {
     console.log("Running database migration...");
     
     // Check if messages table exists
-    const result = await pool.query(sql`
+    const result = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
@@ -29,7 +28,7 @@ async function migrate() {
       console.log("Creating messages table...");
       
       // Create messages table matching the schema
-      await pool.query(sql`
+      await pool.query(`
         CREATE TABLE IF NOT EXISTS messages (
           id SERIAL PRIMARY KEY,
           role TEXT NOT NULL,
