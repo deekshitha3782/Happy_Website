@@ -174,9 +174,17 @@ export async function registerRoutes(
 
   // Initialize Groq client (free LLM API)
   const groqApiKey = process.env.GROQ_API_KEY;
+  console.log("🔍 DEBUG: GROQ_API_KEY check:", {
+    exists: !!groqApiKey,
+    length: groqApiKey?.length || 0,
+    startsWith: groqApiKey?.substring(0, 4) || "none",
+    allEnvVars: Object.keys(process.env).filter(k => k.includes("GROQ") || k.includes("OPENAI"))
+  });
   const groq = groqApiKey ? new Groq({ apiKey: groqApiKey }) : null;
   if (!groqApiKey) {
-    console.log("ℹ️ INFO: GROQ_API_KEY not set. Get a free key at https://console.groq.com/keys");
+    console.log("⚠️ WARNING: GROQ_API_KEY not set. Get a free key at https://console.groq.com/keys");
+  } else {
+    console.log("✅ Groq client initialized successfully");
   }
 
   app.get(api.messages.list.path, async (req, res) => {
@@ -240,20 +248,54 @@ export async function registerRoutes(
       }
       
       // If OpenAI didn't work or wasn't available, try Groq (free LLM)
-      if (!aiContent && groq) {
-        try {
-          console.log("POST /api/messages - Calling Groq API (free LLM)...");
-          const response = await groq.chat.completions.create({
-            model: "llama-3.1-70b-versatile", // Free, fast model
-            messages: [systemMessage, ...messagesForAI],
-            temperature: 0.7,
-            max_tokens: 500,
+      if (!aiContent) {
+        // Check environment variable at request time (in case it was added after server start)
+        const currentGroqKey = process.env.GROQ_API_KEY;
+        let groqClient = groq;
+        
+        // If groq client is null but we have a key now, create it
+        if (!groqClient && currentGroqKey) {
+          console.log("🔄 Creating Groq client with runtime environment variable");
+          groqClient = new Groq({ apiKey: currentGroqKey });
+        }
+        
+        if (groqClient) {
+          try {
+            console.log("POST /api/messages - Calling Groq API (free LLM)...");
+            console.log("🔍 DEBUG: Groq request:", {
+              model: "llama-3.1-70b-versatile",
+              messageCount: messagesForAI.length,
+              hasSystemMessage: !!systemMessage,
+              apiKeySet: !!currentGroqKey,
+              apiKeyLength: currentGroqKey?.length || 0
+            });
+            const response = await groqClient.chat.completions.create({
+              model: "llama-3.1-70b-versatile", // Free, fast model
+              messages: [systemMessage, ...messagesForAI],
+              temperature: 0.7,
+              max_tokens: 500,
+            });
+            aiContent = response.choices[0].message.content || "";
+            console.log("✅ POST /api/messages - Groq response received, length:", aiContent.length);
+            console.log("🔍 DEBUG: Groq response preview:", aiContent.substring(0, 100));
+          } catch (groqError: any) {
+            console.error("❌ Groq API error:", {
+              message: groqError?.message,
+              status: groqError?.status,
+              statusText: groqError?.statusText,
+              error: String(groqError),
+              stack: groqError?.stack?.substring(0, 200)
+            });
+            console.log("Groq failed, trying Hugging Face (free, no API key)...");
+          }
+        } else {
+          console.log("⚠️ WARNING: Groq client is null. GROQ_API_KEY may not be set correctly.");
+          console.log("🔍 DEBUG: Environment check at request time:", {
+            groqApiKeyExists: !!currentGroqKey,
+            groqApiKeyLength: currentGroqKey?.length || 0,
+            groqApiKeyPreview: currentGroqKey ? currentGroqKey.substring(0, 10) + "..." : "none",
+            startupGroqKeyExists: !!groqApiKey
           });
-          aiContent = response.choices[0].message.content || "";
-          console.log("POST /api/messages - Groq response received, length:", aiContent.length);
-        } catch (groqError: any) {
-          console.error("Groq API error:", groqError);
-          console.log("Groq failed, trying Hugging Face (free, no API key)...");
         }
       }
       
