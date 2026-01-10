@@ -10,25 +10,41 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Initialize OpenAI client
+  const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (!openaiApiKey || openaiApiKey === "dummy-key") {
+    console.error("⚠️ WARNING: AI_INTEGRATIONS_OPENAI_API_KEY is not set or is dummy-key");
+  }
+  
   const openai = new OpenAI({ 
-    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "dummy-key",
+    apiKey: openaiApiKey || "dummy-key",
     baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
   });
 
   app.get(api.messages.list.path, async (req, res) => {
-    const messages = await storage.getMessages();
-    res.json(messages);
+    try {
+      console.log("GET /api/messages - Fetching messages");
+      const messages = await storage.getMessages();
+      console.log(`GET /api/messages - Found ${messages.length} messages`);
+      res.json(messages);
+    } catch (err) {
+      console.error("Error fetching messages:", err);
+      res.status(500).json({ message: "Failed to fetch messages", error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.post(api.messages.create.path, async (req, res) => {
     try {
+      console.log("POST /api/messages - Received request");
       const input = api.messages.create.input.parse(req.body);
+      console.log("POST /api/messages - Input validated:", { role: input.role, contentLength: input.content.length });
       
       // 1. Save user message
       await storage.createMessage(input);
+      console.log("POST /api/messages - User message saved");
 
       // 2. Get history for context
       const history = await storage.getMessages();
+      console.log(`POST /api/messages - Got ${history.length} messages from history`);
       const messagesForAI = history.map(m => ({
         role: m.role as "user" | "assistant" | "system",
         content: m.content
@@ -41,18 +57,25 @@ export async function registerRoutes(
       };
 
       // 4. Call OpenAI
+      console.log("POST /api/messages - Calling OpenAI API...");
+      if (!openaiApiKey || openaiApiKey === "dummy-key") {
+        throw new Error("OpenAI API key is not configured");
+      }
+      
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [systemMessage, ...messagesForAI],
       });
 
       const aiContent = response.choices[0].message.content || "I'm here for you, but I'm having trouble finding the right words right now.";
+      console.log("POST /api/messages - OpenAI response received, length:", aiContent.length);
 
       // 5. Save assistant message
       const assistantMessage = await storage.createMessage({
         role: "assistant",
         content: aiContent
       });
+      console.log("POST /api/messages - Assistant message saved, ID:", assistantMessage.id);
 
       // 6. Generate speech if requested (mock for now, or use OpenAI TTS if available)
       // Since OpenAI AI integration might not support TTS yet, we'll keep it simple.
@@ -64,11 +87,17 @@ export async function registerRoutes(
     } catch (err) {
       console.error("Chat error:", err);
       if (err instanceof z.ZodError) {
+        console.error("Validation error:", err.errors);
         return res.status(400).json({
           message: err.errors[0].message,
         });
       }
-      res.status(500).json({ message: "Failed to generate response" });
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("Full error:", errorMessage);
+      res.status(500).json({ 
+        message: "Failed to generate response",
+        error: errorMessage
+      });
     }
   });
 
