@@ -263,14 +263,14 @@ export async function registerRoutes(
           try {
             console.log("POST /api/messages - Calling Groq API (free LLM)...");
             console.log("🔍 DEBUG: Groq request:", {
-              model: "llama-3.1-70b-versatile",
+              model: "llama-3.1-8b-instant",
               messageCount: messagesForAI.length,
               hasSystemMessage: !!systemMessage,
               apiKeySet: !!currentGroqKey,
               apiKeyLength: currentGroqKey?.length || 0
             });
             const response = await groqClient.chat.completions.create({
-              model: "llama-3.1-70b-versatile", // Free, fast model
+              model: "llama-3.1-8b-instant", // Free, fast model (updated from deprecated 70b)
               messages: [systemMessage, ...messagesForAI],
               temperature: 0.7,
               max_tokens: 500,
@@ -310,9 +310,9 @@ export async function registerRoutes(
             ...messagesForAI.map(m => ({ role: m.role, content: m.content }))
           ];
           
-          // Use Meta's Llama 3.1 8B model via Hugging Face (free, public)
+          // Use Meta's Llama 3.1 8B model via Hugging Face (free, public) - updated endpoint
           const hfResponse = await fetch(
-            "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "https://router.huggingface.co/models/meta-llama/Meta-Llama-3.1-8B-Instruct",
             {
               method: "POST",
               headers: {
@@ -341,45 +341,11 @@ export async function registerRoutes(
           }
         } catch (hfError: any) {
           console.error("Hugging Face API error:", hfError);
-          console.log("Hugging Face failed, trying Together AI (free LLM)...");
+          console.log("Hugging Face failed, will use fallback responses");
         }
       }
       
-      // Try Together AI (free tier, no API key needed for basic usage)
-      if (!aiContent) {
-        try {
-          console.log("POST /api/messages - Calling Together AI (free LLM)...");
-          
-          const togetherResponse = await fetch(
-            "https://api.together.xyz/v1/chat/completions",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: "meta-llama/Llama-3-8b-chat-hf",
-                messages: [systemMessage, ...messagesForAI],
-                max_tokens: 500,
-                temperature: 0.7,
-              }),
-            }
-          );
-          
-          if (togetherResponse.ok) {
-            const togetherData = await togetherResponse.json();
-            if (togetherData.choices && togetherData.choices[0] && togetherData.choices[0].message) {
-              aiContent = togetherData.choices[0].message.content || "";
-              console.log("POST /api/messages - Together AI response received, length:", aiContent.length);
-            }
-          } else {
-            const errorText = await togetherResponse.text();
-            console.error("Together AI API error:", togetherResponse.status, errorText);
-          }
-        } catch (togetherError: any) {
-          console.error("Together AI API error:", togetherError);
-        }
-      }
+      // Together AI removed - requires API key, not truly free
       
       // Last resort: use hardcoded fallback
       if (!aiContent) {
