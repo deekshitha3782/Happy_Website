@@ -253,13 +253,95 @@ export async function registerRoutes(
           console.log("POST /api/messages - Groq response received, length:", aiContent.length);
         } catch (groqError: any) {
           console.error("Groq API error:", groqError);
-          console.log("Groq failed, using hardcoded fallback responses");
+          console.log("Groq failed, trying Hugging Face (free, no API key)...");
+        }
+      }
+      
+      // Try Hugging Face Inference API (free, no API key needed for some models)
+      if (!aiContent) {
+        try {
+          console.log("POST /api/messages - Calling Hugging Face Inference API (free LLM, no key needed)...");
+          
+          // Format messages for Hugging Face
+          const hfMessages = [
+            { role: "system", content: systemMessage.content },
+            ...messagesForAI.map(m => ({ role: m.role, content: m.content }))
+          ];
+          
+          // Use Meta's Llama 3.1 8B model via Hugging Face (free, public)
+          const hfResponse = await fetch(
+            "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-8B-Instruct",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                inputs: hfMessages.map(m => `${m.role}: ${m.content}`).join("\n") + "\nassistant:",
+                parameters: {
+                  max_new_tokens: 500,
+                  temperature: 0.7,
+                  return_full_text: false,
+                },
+              }),
+            }
+          );
+          
+          if (hfResponse.ok) {
+            const hfData = await hfResponse.json();
+            if (hfData && hfData[0] && hfData[0].generated_text) {
+              aiContent = hfData[0].generated_text.trim();
+              console.log("POST /api/messages - Hugging Face response received, length:", aiContent.length);
+            }
+          } else {
+            const errorText = await hfResponse.text();
+            console.error("Hugging Face API error:", hfResponse.status, errorText);
+          }
+        } catch (hfError: any) {
+          console.error("Hugging Face API error:", hfError);
+          console.log("Hugging Face failed, trying Together AI (free LLM)...");
+        }
+      }
+      
+      // Try Together AI (free tier, no API key needed for basic usage)
+      if (!aiContent) {
+        try {
+          console.log("POST /api/messages - Calling Together AI (free LLM)...");
+          
+          const togetherResponse = await fetch(
+            "https://api.together.xyz/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "meta-llama/Llama-3-8b-chat-hf",
+                messages: [systemMessage, ...messagesForAI],
+                max_tokens: 500,
+                temperature: 0.7,
+              }),
+            }
+          );
+          
+          if (togetherResponse.ok) {
+            const togetherData = await togetherResponse.json();
+            if (togetherData.choices && togetherData.choices[0] && togetherData.choices[0].message) {
+              aiContent = togetherData.choices[0].message.content || "";
+              console.log("POST /api/messages - Together AI response received, length:", aiContent.length);
+            }
+          } else {
+            const errorText = await togetherResponse.text();
+            console.error("Together AI API error:", togetherResponse.status, errorText);
+          }
+        } catch (togetherError: any) {
+          console.error("Together AI API error:", togetherError);
         }
       }
       
       // Last resort: use hardcoded fallback
       if (!aiContent) {
-        console.log("Using hardcoded fallback responses (no LLM available)");
+        console.log("All LLM APIs failed, using hardcoded fallback responses");
         aiContent = generateFallbackResponse(input.content, history);
       }
 
