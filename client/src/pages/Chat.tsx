@@ -7,11 +7,13 @@ import { Trash2, HeartHandshake, CloudSun, Volume2, VolumeX, Phone } from "lucid
 import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Chat() {
-  const { data: messages, isLoading } = useMessages();
-  const { mutate: sendMessage, isPending: isSending } = useSendMessage();
+  const { data: messages, isLoading, error: messagesError } = useMessages();
+  const { mutate: sendMessage, isPending: isSending, error: sendError } = useSendMessage();
   const { mutate: clearChat, isPending: isClearing } = useClearChat();
+  const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const lastReadMessageId = useRef<number | null>(null);
@@ -45,8 +47,32 @@ export default function Chat() {
   }, [messages, isSending]);
 
   const handleSend = (content: string) => {
-    sendMessage({ role: "user", content });
+    sendMessage(
+      { role: "user", content },
+      {
+        onError: (error: Error) => {
+          console.error("Error sending message:", error);
+          toast({
+            title: "Failed to send message",
+            description: error.message || "Please check your connection and try again.",
+            variant: "destructive",
+          });
+        },
+      }
+    );
   };
+
+  // Show error toasts
+  useEffect(() => {
+    if (messagesError) {
+      console.error("Error loading messages:", messagesError);
+      toast({
+        title: "Failed to load messages",
+        description: "Could not load chat history. Please refresh the page.",
+        variant: "destructive",
+      });
+    }
+  }, [messagesError, toast]);
 
   const toggleVoice = () => {
     setIsVoiceEnabled(!isVoiceEnabled);
