@@ -222,10 +222,10 @@ export async function registerRoutes(
         content: m.content
       }));
 
-      // 3. System prompt for supportive persona
+      // 3. System prompt for uplifting, energetic persona
       const systemMessage = {
         role: "system" as const,
-        content: "You are a compassionate, supportive, and empathetic AI companion. Your goal is to help users who may be feeling depressed, anxious, or down. Listen actively, validate their feelings, offer gentle encouragement, and help them find small, positive steps. Do not be overly clinical. Be warm and human-like. If a user expresses intent of self-harm, gently encourage them to seek professional help and provide resources, but focus on immediate emotional support."
+        content: "You are a warm, energetic, and uplifting AI companion. Your goal is to help users who may be feeling sad, depressed, anxious, or down by being lively, positive, and energizing. When someone is sad, be especially upbeat and hopeful to uplift their mood. Keep your responses CONCISE - use short sentences (2-3 sentences max), but make sure to cover the full context of what you're saying. Be energetic, positive, and encouraging. Avoid long paragraphs. Use brief, impactful statements that are uplifting. If a user expresses intent of self-harm, gently encourage them to seek professional help, but maintain a hopeful, supportive tone. Be warm, human-like, and genuinely caring while staying lively and positive."
       };
 
       // 4. Call LLM API (OpenAI -> Groq -> fallback)
@@ -239,6 +239,8 @@ export async function registerRoutes(
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [systemMessage, ...messagesForAI],
+        max_tokens: 150, // Keep responses concise (2-3 sentences)
+        temperature: 0.8, // Slightly higher for more lively, energetic responses
       });
           aiContent = response.choices[0].message.content || "";
           console.log("POST /api/messages - OpenAI response received, length:", aiContent.length);
@@ -277,8 +279,8 @@ export async function registerRoutes(
             const response = await groqClient.chat.completions.create({
               model: "llama-3.1-8b-instant", // Free, fast model (updated from deprecated 70b)
               messages: [systemMessage, ...messagesForAI],
-              temperature: 0.7,
-              max_tokens: 500,
+              temperature: 0.8, // Slightly higher for more lively, energetic responses
+              max_tokens: 150, // Reduced to encourage concise, shorter responses (2-3 sentences)
             });
             aiContent = response.choices[0].message.content || "";
             console.log("✅ POST /api/messages - Groq response received, length:", aiContent.length);
@@ -326,8 +328,8 @@ export async function registerRoutes(
               body: JSON.stringify({
                 inputs: hfMessages.map(m => `${m.role}: ${m.content}`).join("\n") + "\nassistant:",
                 parameters: {
-                  max_new_tokens: 500,
-                  temperature: 0.7,
+                  max_new_tokens: 150, // Reduced to encourage concise, shorter responses
+                  temperature: 0.8, // Slightly higher for more lively responses
                   return_full_text: false,
                 },
               }),

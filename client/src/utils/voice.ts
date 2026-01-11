@@ -63,7 +63,7 @@ export function getFemaleVoice(): SpeechSynthesisVoice | null {
 
 /**
  * Configure a SpeechSynthesisUtterance with consistent female voice settings
- * Optimized for a soothing, pleasant, and calming experience
+ * Optimized for a lively, uplifting, and energetic experience to boost mood
  */
 export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void {
   const femaleVoice = getFemaleVoice();
@@ -71,10 +71,10 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
     utterance.voice = femaleVoice;
   }
   
-  // Soothing, pleasant voice settings for a calming experience
-  utterance.rate = 0.8;   // Slower for more soothing, pleasant sound
-  utterance.pitch = 0.85; // Slightly lower pitch for warmer, more soothing tone
-  utterance.volume = 0.9; // Slightly softer for a gentler experience
+  // Lively, uplifting voice settings to energize and uplift mood
+  utterance.rate = 1.0;   // Normal to slightly faster for more energy and liveliness
+  utterance.pitch = 1.1;  // Slightly higher pitch for a brighter, more uplifting tone
+  utterance.volume = 0.95; // Clear and present but not overwhelming
 }
 
 /**
