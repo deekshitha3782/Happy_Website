@@ -85,3 +85,4 @@ If you have another OpenAI account:
 
 **Once billing is set up, your chat will work!** ✅
 
+

@@ -13,7 +13,7 @@ services:
         sync: false
       - key: PORT
         value: 10000
-    healthCheckPath: /
+    healthCheckPath: /health
 
 databases:
   - name: kindmindai-db

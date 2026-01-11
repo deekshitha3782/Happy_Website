@@ -23,9 +23,9 @@ export class DatabaseStorage implements IStorage {
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
     try {
       console.log("DatabaseStorage.createMessage: Inserting message", { role: insertMessage.role });
-      const [message] = await db.insert(messages).values(insertMessage).returning();
+    const [message] = await db.insert(messages).values(insertMessage).returning();
       console.log("DatabaseStorage.createMessage: Message created with ID", message.id);
-      return message;
+    return message;
     } catch (error) {
       console.error("DatabaseStorage.createMessage error:", error);
       throw error;
@@ -34,7 +34,7 @@ export class DatabaseStorage implements IStorage {
   
   async clearMessages(): Promise<void> {
     try {
-      await db.delete(messages);
+    await db.delete(messages);
       console.log("DatabaseStorage.clearMessages: All messages cleared");
     } catch (error) {
       console.error("DatabaseStorage.clearMessages error:", error);

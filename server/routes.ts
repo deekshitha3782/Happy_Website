@@ -187,12 +187,17 @@ export async function registerRoutes(
     console.log("✅ Groq client initialized successfully");
   }
 
+  // Health check endpoint to keep Render service awake
+  app.get("/health", (req, res) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   app.get(api.messages.list.path, async (req, res) => {
     try {
       console.log("GET /api/messages - Fetching messages");
-      const messages = await storage.getMessages();
+    const messages = await storage.getMessages();
       console.log(`GET /api/messages - Found ${messages.length} messages`);
-      res.json(messages);
+    res.json(messages);
     } catch (err) {
       console.error("Error fetching messages:", err);
       res.status(500).json({ message: "Failed to fetch messages", error: err instanceof Error ? err.message : String(err) });
@@ -231,10 +236,10 @@ export async function registerRoutes(
       // Try OpenAI first if key is available
       if (openaiApiKey && openaiApiKey !== "dummy-key") {
         try {
-          const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [systemMessage, ...messagesForAI],
-          });
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [systemMessage, ...messagesForAI],
+      });
           aiContent = response.choices[0].message.content || "";
           console.log("POST /api/messages - OpenAI response received, length:", aiContent.length);
         } catch (openaiError: any) {

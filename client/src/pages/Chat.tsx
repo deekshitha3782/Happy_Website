@@ -17,6 +17,18 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const lastReadMessageId = useRef<number | null>(null);
+  const hasClearedOnMount = useRef(false);
+
+  // Auto-clear messages on page load so each session starts fresh
+  useEffect(() => {
+    if (!hasClearedOnMount.current && !isLoading) {
+      hasClearedOnMount.current = true;
+      // Clear messages if any exist (this ensures each new session starts fresh)
+      if (messages && messages.length > 0) {
+        clearChat();
+      }
+    }
+  }, [isLoading, messages, clearChat]);
 
   // Voice output logic
   useEffect(() => {

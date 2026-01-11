@@ -6,12 +6,12 @@ export function useMessages() {
     queryKey: [api.messages.list.path],
     queryFn: async () => {
       try {
-        const res = await fetch(api.messages.list.path);
+      const res = await fetch(api.messages.list.path);
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({ message: "Unknown error" }));
           throw new Error(errorData.error || errorData.message || `Failed to fetch messages: ${res.status}`);
         }
-        return api.messages.list.responses[200].parse(await res.json());
+      return api.messages.list.responses[200].parse(await res.json());
       } catch (error) {
         console.error("Error fetching messages:", error);
         throw error;
@@ -26,20 +26,20 @@ export function useSendMessage() {
   return useMutation({
     mutationFn: async (message: InsertMessage) => {
       try {
-        const res = await fetch(api.messages.create.path, {
-          method: api.messages.create.method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(message),
-        });
-        
-        if (!res.ok) {
+      const res = await fetch(api.messages.create.path, {
+        method: api.messages.create.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(message),
+      });
+      
+      if (!res.ok) {
           const errorData = await res.json().catch(() => ({ message: "Unknown error" }));
           const errorMessage = errorData.error || errorData.message || `Server error: ${res.status}`;
           console.error("API error:", errorMessage, res.status);
           throw new Error(errorMessage);
-        }
-        
-        return api.messages.create.responses[201].parse(await res.json());
+      }
+      
+      return api.messages.create.responses[201].parse(await res.json());
       } catch (error) {
         console.error("Fetch error:", error);
         if (error instanceof Error) {

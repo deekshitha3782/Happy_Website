@@ -10,6 +10,37 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Check if service is ready and handle Render loading screen
+      (function() {
+        const maxRetries = 10;
+        let retries = 0;
+        
+        function checkHealth() {
+          fetch('/health')
+            .then(res => {
+              if (res.ok) {
+                // Service is ready, continue loading the app
+                return;
+              }
+              throw new Error('Service not ready');
+            })
+            .catch(() => {
+              retries++;
+              if (retries < maxRetries) {
+                // Retry after 1 second
+                setTimeout(checkHealth, 1000);
+              } else {
+                // After max retries, try to load anyway
+                console.warn('Health check failed, loading app anyway');
+              }
+            });
+        }
+        
+        // Start health check
+        checkHealth();
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
