@@ -23,6 +23,11 @@ export default function VoiceCall() {
   const lastReadMessageId = useRef<number | null>(null);
   const hasInitialized = useRef(false);
 
+  // Detect device/browser type
+  const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
   // Stop any chat voice and clear chat when Call AI starts, then send greeting
   useEffect(() => {
     // Stop any ongoing speech from chat immediately
@@ -51,11 +56,6 @@ export default function VoiceCall() {
       });
     }
   }, [clearChat, sendMessage]);
-
-  // Detect if iOS Safari (doesn't support Web Speech API)
-  const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   // Initialize Speech Recognition with mobile support
   useEffect(() => {
