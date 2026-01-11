@@ -256,6 +256,21 @@ export default function VoiceCall() {
     }
   }, [transcript]);
 
+  // Add manual start button for mobile browsers that require user interaction
+  const handleStartListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+        setCallStatus("Connecting...");
+      } catch (e: any) {
+        console.error("Failed to start:", e);
+        setCallStatus("Failed to start - check permissions");
+      }
+    } else {
+      setCallStatus("Speech recognition not initialized");
+    }
+  };
+
   const toggleMute = () => {
     setIsMuted(!isMuted);
     if (!isMuted) {
