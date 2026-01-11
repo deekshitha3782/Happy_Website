@@ -91,54 +91,64 @@ export default function VoiceCall() {
       return;
     }
 
-    // Request microphone permission with echo cancellation and gain boost
+    // Request microphone permission with echo cancellation (mobile-friendly)
     const requestMicrophonePermission = async () => {
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          // Request audio with echo cancellation, noise suppression, and auto gain control
-          // This helps prevent AI voice from being picked up and boosts microphone sensitivity
+          // Mobile browsers are picky about constraints - use ideal/fallback pattern
           const constraints: MediaStreamConstraints = {
             audio: {
-              echoCancellation: true,      // Prevents AI voice from being picked up
-              noiseSuppression: true,        // Reduces background noise
-              autoGainControl: true,        // Automatically boosts quiet speech (fixes "screaming" issue)
-              sampleRate: 44100,            // High quality audio
-              channelCount: 1,               // Mono (sufficient for speech)
+              // Use ideal values with fallbacks for mobile compatibility
+              echoCancellation: { ideal: true },      // Prevents AI voice from being picked up
+              noiseSuppression: { ideal: true },      // Reduces background noise
+              autoGainControl: { ideal: true },       // Automatically boosts quiet speech
+              // Don't specify sampleRate/channelCount on mobile - let browser choose
+              ...(isMobile ? {} : {
+                sampleRate: { ideal: 44100 },
+                channelCount: { ideal: 1 }
+              })
             }
           };
           
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          mediaStreamRef.current = stream;
-          
-          // Use Web Audio API to boost microphone gain (especially for mobile)
+          let stream: MediaStream;
           try {
-            const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-            audioContextRef.current = new AudioContext();
-            const source = audioContextRef.current.createMediaStreamSource(stream);
-            const gainNode = audioContextRef.current.createGain();
-            
-            // Boost gain on mobile (phones need more amplification)
-            gainNode.gain.value = isMobile ? 2.5 : 1.5; // 2.5x boost on mobile, 1.5x on desktop
-            source.connect(gainNode);
-            
-            // Create a destination to keep the stream active
-            const destination = audioContextRef.current.createMediaStreamDestination();
-            gainNode.connect(destination);
-            
-            console.log("✅ Microphone configured with echo cancellation and gain boost:", {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-              gainBoost: isMobile ? "2.5x" : "1.5x",
-              isMobile
-            });
-          } catch (audioError) {
-            console.warn("Web Audio API not available, using default settings:", audioError);
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            console.log("✅ Microphone permission granted with constraints");
+          } catch (constraintError: any) {
+            // Fallback: Try simpler constraints if strict ones fail (common on mobile)
+            console.warn("Strict constraints failed, trying simpler:", constraintError);
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  echoCancellation: true,
+                  autoGainControl: true
+                }
+              });
+              console.log("✅ Microphone permission granted with fallback constraints");
+            } catch (simpleError: any) {
+              // Last resort: Just request audio
+              console.warn("Fallback constraints failed, using basic audio:", simpleError);
+              stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              console.log("✅ Microphone permission granted (basic)");
+            }
           }
           
-          console.log("✅ Microphone permission granted with echo cancellation");
+          mediaStreamRef.current = stream;
+          
+          // Log actual constraints applied (for debugging)
+          const audioTracks = stream.getAudioTracks();
+          if (audioTracks.length > 0) {
+            const settings = audioTracks[0].getSettings();
+            console.log("🎤 Actual microphone settings:", {
+              echoCancellation: settings.echoCancellation,
+              noiseSuppression: settings.noiseSuppression,
+              autoGainControl: settings.autoGainControl,
+              sampleRate: settings.sampleRate,
+              isMobile
+            });
+          }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Microphone permission denied:", err);
         setCallStatus("Microphone permission required");
         return;
@@ -157,13 +167,15 @@ export default function VoiceCall() {
       // Mobile-specific settings for better speech detection
       try {
         (recognitionRef.current as any).maxAlternatives = 1;
-        // Mobile browsers may need different settings
+        
+        // Mobile-specific optimizations
         if (isMobile) {
-          // Some mobile browsers benefit from these settings
+          // On mobile, we want to be more sensitive to speech
+          // Some mobile browsers support additional settings
           try {
-            // Lower the silence timeout if available (helps mobile detect speech faster)
-            if ((recognitionRef.current as any).grammars !== undefined) {
-              // Some browsers support grammars
+            // Try to set serviceURI if available (some mobile browsers use this)
+            if ((recognitionRef.current as any).serviceURI === undefined) {
+              // Not using service-based recognition
             }
           } catch (e) {
             // Ignore if not supported
@@ -172,6 +184,14 @@ export default function VoiceCall() {
       } catch (e) {
         console.log("Some recognition settings not supported");
       }
+      
+      console.log("🎤 Speech recognition configured:", {
+        continuous: recognitionRef.current.continuous,
+        interimResults: recognitionRef.current.interimResults,
+        lang: recognitionRef.current.lang,
+        isMobile,
+        userAgent: navigator.userAgent.substring(0, 50)
+      });
       
       console.log("🎤 Speech recognition configured:", {
         continuous: recognitionRef.current.continuous,
@@ -293,8 +313,9 @@ export default function VoiceCall() {
           
           // Noise filtering for mobile (phone microphones are sensitive)
           // Require minimum length and word count to filter out small sounds
-          const minLength = isMobile ? 8 : 5; // Reduced from 10 to 8 (gain boost helps)
-          const minWords = isMobile ? 2 : 1; // At least 2 words on mobile
+          // Reduced thresholds since autoGainControl should help with sensitivity
+          const minLength = isMobile ? 6 : 5; // Further reduced - autoGainControl helps
+          const minWords = isMobile ? 1 : 1; // Reduced to 1 word on mobile (autoGainControl helps)
           const wordCount = trimmed.split(/\s+/).filter(w => w.length > 0).length;
           
           // Check if it's actual speech (has letters, not just noise)
@@ -499,21 +520,37 @@ export default function VoiceCall() {
 
   // Add manual start button for mobile browsers that require user interaction
   const handleStartListening = async () => {
-    // Request permission with echo cancellation (same as init)
+    // Request permission with echo cancellation (mobile-friendly, same as init)
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const constraints: MediaStreamConstraints = {
           audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            sampleRate: 44100,
-            channelCount: 1,
+            echoCancellation: { ideal: true },
+            noiseSuppression: { ideal: true },
+            autoGainControl: { ideal: true },
+            ...(isMobile ? {} : {
+              sampleRate: { ideal: 44100 },
+              channelCount: { ideal: 1 }
+            })
           }
         };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err: any) {
+          // Fallback to simpler constraints
+          console.warn("Strict constraints failed, using fallback:", err);
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              autoGainControl: true
+            }
+          });
+        }
+        
         mediaStreamRef.current = stream;
-        console.log("Microphone permission granted with echo cancellation");
+        console.log("✅ Microphone permission granted");
       }
     } catch (err) {
       console.error("Microphone permission denied:", err);
