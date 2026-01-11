@@ -48,6 +48,15 @@
       radial-gradient(at 100% 0%, hsla(339,49%,30%,0) 0, transparent 50%);
   }
 
+  /* Mobile touch improvements */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button, a {
+    touch-action: manipulation;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Quicksand', sans-serif;
     @apply tracking-wide;
