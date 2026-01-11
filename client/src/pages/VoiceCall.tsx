@@ -183,54 +183,51 @@ export default function VoiceCall() {
         });
         
         let currentTranscript = "";
-        let hasInterimResults = false;
         let finalTranscript = "";
         
+        // Process all results - simpler approach like ChatInput
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          const transcript = result[0].transcript;
-          // Mobile browsers often don't provide confidence, so use lower threshold
-          const confidence = result[0].confidence || (isMobile ? 0.1 : 0.5);
+          const transcript = result[0].transcript || "";
           
-          console.log(`  Result ${i}: "${transcript}" (final: ${result.isFinal}, confidence: ${confidence})`);
+          console.log(`  Result ${i}: "${transcript}" (final: ${result.isFinal})`);
           
           if (result.isFinal) {
-            // Process final results - lower threshold on mobile
+            // Final result - this is what we send to AI
             const final = transcript.trim();
-            const minConfidence = isMobile ? 0.1 : 0.3; // Much lower threshold on mobile
-            if (final && final.length >= 1 && confidence >= minConfidence) {
-              finalTranscript = final;
+            if (final) {
+              finalTranscript += final + " "; // Accumulate multiple final results
               // Stop AI speech immediately when user speaks
               window.speechSynthesis.cancel();
-              console.log("✅ Final transcript ready:", finalTranscript);
-            } else {
-              console.log("⚠️ Final transcript rejected:", { final, length: final.length, confidence, minConfidence });
             }
           } else {
-            // User is speaking (interim results) - stop AI immediately
-            hasInterimResults = true;
+            // Interim result - show in real-time, stop AI
             currentTranscript += transcript;
             // Immediately stop AI speech when user starts talking
             window.speechSynthesis.cancel();
-            console.log("📝 Interim transcript:", currentTranscript);
           }
         }
         
-        // Update transcript for real-time display
-        if (hasInterimResults || currentTranscript) {
+        // Update transcript for real-time display (interim results)
+        if (currentTranscript) {
           setTranscript(currentTranscript);
         }
         
-        // Only send message if we have a valid final transcript
-        // Lower minimum length on mobile (1 character vs 2)
-        const minLength = isMobile ? 1 : 2;
-        if (finalTranscript && finalTranscript.length >= minLength) {
-          console.log("📤 Sending message to AI:", finalTranscript);
-          sendMessage({ role: "user", content: finalTranscript });
-          // Clear transcript after sending
-          setTranscript("");
-        } else if (finalTranscript) {
-          console.log("⚠️ Message too short, not sending:", finalTranscript);
+        // Send final transcript to AI (no confidence or length filtering on mobile)
+        // On mobile, accept any final transcript - be very permissive
+        if (finalTranscript) {
+          const trimmed = finalTranscript.trim();
+          // On mobile, accept even single characters/words
+          // On desktop, require at least 2 characters
+          const minLength = isMobile ? 1 : 2;
+          if (trimmed.length >= minLength) {
+            console.log("📤 Sending message to AI:", trimmed);
+            sendMessage({ role: "user", content: trimmed });
+            // Clear transcript after sending
+            setTranscript("");
+          } else {
+            console.log("⚠️ Message too short:", trimmed);
+          }
         }
       };
 
