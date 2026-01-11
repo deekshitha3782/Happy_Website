@@ -175,19 +175,19 @@ export default function VoiceCall() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-between p-8 font-sans overflow-hidden">
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-between p-4 sm:p-6 md:p-8 font-sans overflow-hidden safe-area-inset">
       {/* Top Info */}
-      <header className="w-full flex flex-col items-center gap-2 mt-12">
+      <header className="w-full flex flex-col items-center gap-2 mt-4 sm:mt-8 md:mt-12">
         <motion.div 
           animate={{ scale: [1, 1.05, 1] }}
           transition={{ duration: 4, repeat: Infinity }}
-          className="w-16 h-16 bg-primary/20 rounded-2xl flex items-center justify-center text-primary mb-4"
+          className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-primary/20 rounded-2xl flex items-center justify-center text-primary mb-2 sm:mb-3 md:mb-4"
         >
-          <CloudSun size={32} />
+          <CloudSun className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8" />
         </motion.div>
-        <h1 className="text-2xl font-bold tracking-tight">Serenity AI</h1>
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight">Serenity AI</h1>
         <p className={cn(
-          "text-sm font-medium transition-colors",
+          "text-xs sm:text-sm font-medium transition-colors",
           callStatus === "Connected" ? "text-green-400" : "text-slate-400"
         )}>
           {callStatus}
@@ -195,7 +195,7 @@ export default function VoiceCall() {
       </header>
 
       {/* Visualizer / Avatar */}
-      <main className="relative flex items-center justify-center">
+      <main className="relative flex items-center justify-center flex-1 min-h-0 w-full">
         <AnimatePresence>
           {isListening && (
             <>
@@ -203,20 +203,20 @@ export default function VoiceCall() {
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1.5, opacity: 0 }}
                 transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
-                className="absolute w-64 h-64 bg-primary/20 rounded-full"
+                className="absolute w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 bg-primary/20 rounded-full"
               />
               <motion.div
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 2, opacity: 0 }}
                 transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay: 0.5 }}
-                className="absolute w-64 h-64 bg-primary/10 rounded-full"
+                className="absolute w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 bg-primary/10 rounded-full"
               />
             </>
           )}
         </AnimatePresence>
         
-        <div className="relative w-48 h-48 bg-gradient-to-tr from-primary to-blue-400 rounded-full flex items-center justify-center shadow-2xl shadow-primary/20 z-10">
-          <HeartHandshake size={64} className="text-white" />
+        <div className="relative w-36 h-36 sm:w-40 sm:h-40 md:w-48 md:h-48 bg-gradient-to-tr from-primary to-blue-400 rounded-full flex items-center justify-center shadow-2xl shadow-primary/20 z-10">
+          <HeartHandshake className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 text-white" />
           {isSending && (
             <motion.div 
               className="absolute inset-0 rounded-full border-4 border-white/30"
@@ -228,28 +228,28 @@ export default function VoiceCall() {
       </main>
 
       {/* Transcript / Subtitles */}
-      <div className="w-full max-w-md text-center h-24 flex items-center justify-center px-4">
+      <div className="w-full max-w-md text-center min-h-[60px] sm:min-h-[80px] md:min-h-[96px] flex items-center justify-center px-4 py-2">
         <AnimatePresence mode="wait">
           {transcript ? (
             <motion.p 
               key="transcript"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-lg text-slate-300 italic font-medium"
+              className="text-sm sm:text-base md:text-lg text-slate-300 italic font-medium break-words"
             >
               "{transcript}"
             </motion.p>
           ) : isSending ? (
             <motion.p 
               key="listening"
-              className="text-slate-500 text-sm tracking-widest uppercase font-bold"
+              className="text-slate-500 text-xs sm:text-sm tracking-widest uppercase font-bold"
             >
               Listening...
             </motion.p>
           ) : (
             <motion.p 
               key="waiting"
-              className="text-slate-500 text-sm tracking-widest uppercase font-bold"
+              className="text-slate-500 text-xs sm:text-sm tracking-widest uppercase font-bold"
             >
               Speak freely
             </motion.p>
@@ -258,47 +258,47 @@ export default function VoiceCall() {
       </div>
 
       {/* Controls */}
-      <footer className="w-full max-w-sm grid grid-cols-3 gap-8 mb-12">
-        <div className="flex flex-col items-center gap-2">
+      <footer className="w-full max-w-sm grid grid-cols-3 gap-4 sm:gap-6 md:gap-8 mb-4 sm:mb-8 md:mb-12 px-4">
+        <div className="flex flex-col items-center gap-1 sm:gap-2">
           <Button
             size="icon"
             variant="ghost"
             onClick={toggleMute}
             className={cn(
-              "w-16 h-16 rounded-full border-2 transition-all",
+              "w-14 h-14 sm:w-16 sm:h-16 md:w-18 md:h-18 rounded-full border-2 transition-all touch-manipulation",
               isMuted ? "bg-red-500/20 border-red-500 text-red-500" : "bg-slate-800 border-slate-700 text-slate-300"
             )}
           >
-            {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+            {isMuted ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
           </Button>
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-tighter">Mute</span>
+          <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tighter">Mute</span>
         </div>
 
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-1 sm:gap-2">
           <Button
             size="icon"
             variant="destructive"
             onClick={handleEndCall}
-            className="w-20 h-20 rounded-full shadow-lg shadow-red-500/20"
+            className="w-16 h-16 sm:w-18 sm:h-18 md:w-20 md:h-20 rounded-full shadow-lg shadow-red-500/20 touch-manipulation"
           >
-            <PhoneOff size={32} />
+            <PhoneOff className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9" />
           </Button>
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-tighter">End</span>
+          <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tighter">End</span>
         </div>
 
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-1 sm:gap-2">
           <Button
             size="icon"
             variant="ghost"
             onClick={() => setIsSpeakerOn(!isSpeakerOn)}
             className={cn(
-              "w-16 h-16 rounded-full border-2 transition-all",
+              "w-14 h-14 sm:w-16 sm:h-16 md:w-18 md:h-18 rounded-full border-2 transition-all touch-manipulation",
               !isSpeakerOn ? "bg-amber-500/20 border-amber-500 text-amber-500" : "bg-slate-800 border-slate-700 text-slate-300"
             )}
           >
-            {!isSpeakerOn ? <VolumeX size={24} /> : <Volume2 size={24} />}
+            {!isSpeakerOn ? <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" /> : <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />}
           </Button>
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-tighter">Speaker</span>
+          <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tighter">Speaker</span>
         </div>
       </footer>
     </div>
