@@ -499,18 +499,26 @@ export default function VoiceCall() {
 
   // Add manual start button for mobile browsers that require user interaction
   const handleStartListening = async () => {
-    // Request permission first on mobile
-    if (isMobile) {
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          await navigator.mediaDevices.getUserMedia({ audio: true });
-          console.log("Microphone permission granted");
-        }
-      } catch (err) {
-        console.error("Microphone permission denied:", err);
-        setCallStatus("Microphone permission required - check browser settings");
-        return;
+    // Request permission with echo cancellation (same as init)
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const constraints: MediaStreamConstraints = {
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 44100,
+            channelCount: 1,
+          }
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        mediaStreamRef.current = stream;
+        console.log("Microphone permission granted with echo cancellation");
       }
+    } catch (err) {
+      console.error("Microphone permission denied:", err);
+      setCallStatus("Microphone permission required - check browser settings");
+      return;
     }
 
     if (recognitionRef.current) {
