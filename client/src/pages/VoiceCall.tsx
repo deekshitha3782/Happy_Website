@@ -22,6 +22,8 @@ export default function VoiceCall() {
   const recognitionRef = useRef<any>(null);
   const lastReadMessageId = useRef<number | null>(null);
   const hasInitialized = useRef(false);
+  const lastSentMessageRef = useRef<string>(""); // Prevent duplicate sends
+  const sendTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce sending
 
   // Detect device/browser type
   const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -185,7 +187,7 @@ export default function VoiceCall() {
         let currentTranscript = "";
         let finalTranscript = "";
         
-        // Process all results - simpler approach like ChatInput
+        // Process all results - accumulate both interim and final
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
           const transcript = result[0].transcript || "";
@@ -208,25 +210,70 @@ export default function VoiceCall() {
           }
         }
         
-        // Update transcript for real-time display (interim results)
-        if (currentTranscript) {
-          setTranscript(currentTranscript);
+        // Update transcript for real-time display
+        // Show interim results OR final results (so user sees what was captured)
+        const displayTranscript = currentTranscript || finalTranscript.trim();
+        if (displayTranscript) {
+          setTranscript(displayTranscript);
+          console.log("📝 Transcript displayed:", displayTranscript);
         }
         
-        // Send final transcript to AI (no confidence or length filtering on mobile)
-        // On mobile, accept any final transcript - be very permissive
+        // Send final transcript to AI with noise filtering
         if (finalTranscript) {
           const trimmed = finalTranscript.trim();
-          // On mobile, accept even single characters/words
-          // On desktop, require at least 2 characters
-          const minLength = isMobile ? 1 : 2;
-          if (trimmed.length >= minLength) {
-            console.log("📤 Sending message to AI:", trimmed);
-            sendMessage({ role: "user", content: trimmed });
-            // Clear transcript after sending
-            setTranscript("");
+          
+          // Noise filtering for mobile (phone microphones are sensitive)
+          // Require minimum length and word count to filter out small sounds
+          const minLength = isMobile ? 10 : 5; // At least 10 chars on mobile (filters noise)
+          const minWords = isMobile ? 2 : 1; // At least 2 words on mobile
+          const wordCount = trimmed.split(/\s+/).filter(w => w.length > 0).length;
+          
+          // Check if it's actual speech (has letters, not just noise)
+          const hasLetters = /[a-zA-Z]/.test(trimmed);
+          
+          console.log("🔍 Validating speech:", {
+            trimmed,
+            length: trimmed.length,
+            minLength,
+            wordCount,
+            minWords,
+            hasLetters
+          });
+          
+          if (trimmed.length >= minLength && wordCount >= minWords && hasLetters) {
+            // Prevent sending duplicate messages (mobile sometimes sends same result multiple times)
+            if (trimmed === lastSentMessageRef.current) {
+              console.log("⚠️ Duplicate message ignored:", trimmed);
+              return;
+            }
+            
+            // Debounce: Clear any pending send, then send after short delay
+            // This helps filter out rapid noise triggers
+            if (sendTimeoutRef.current) {
+              clearTimeout(sendTimeoutRef.current);
+            }
+            
+            sendTimeoutRef.current = setTimeout(() => {
+              console.log("✅ Valid speech detected, sending to AI:", trimmed);
+              lastSentMessageRef.current = trimmed;
+              sendMessage({ role: "user", content: trimmed });
+              // Keep transcript visible for a moment so user can see what was sent
+              setTimeout(() => {
+                setTranscript(""); // Clear after 1.5 seconds
+                lastSentMessageRef.current = ""; // Reset after sending
+              }, 1500);
+            }, isMobile ? 300 : 200); // Slightly longer debounce on mobile
           } else {
-            console.log("⚠️ Message too short:", trimmed);
+            console.log("⚠️ Rejected (noise/short):", {
+              reason: trimmed.length < minLength ? "too short" : 
+                      wordCount < minWords ? "not enough words" : 
+                      !hasLetters ? "no letters" : "unknown",
+              trimmed
+            });
+            // Don't clear transcript immediately - let user see what was rejected
+            setTimeout(() => {
+              setTranscript(""); // Clear after 2 seconds if rejected
+            }, 2000);
           }
         }
       };
@@ -298,20 +345,25 @@ export default function VoiceCall() {
     // Initialize on mount
     initSpeechRecognition();
 
-    return () => {
-      // Complete cleanup when component unmounts or dependencies change
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-          recognitionRef.current.abort(); // Force stop
-        } catch (e) {
-          // Ignore errors if already stopped
-        }
-        recognitionRef.current = null; // Clear reference
-      }
-      window.speechSynthesis.cancel();
-      setIsListening(false);
-    };
+          return () => {
+            // Complete cleanup when component unmounts or dependencies change
+            if (recognitionRef.current) {
+              try {
+                recognitionRef.current.stop();
+                recognitionRef.current.abort(); // Force stop
+              } catch (e) {
+                // Ignore errors if already stopped
+              }
+              recognitionRef.current = null; // Clear reference
+            }
+            // Clear any pending timeouts
+            if (sendTimeoutRef.current) {
+              clearTimeout(sendTimeoutRef.current);
+              sendTimeoutRef.current = null;
+            }
+            window.speechSynthesis.cancel();
+            setIsListening(false);
+          };
   }, [sendMessage, isMuted]);
 
   // Voice Output (TTS) with consistent female voice - real-time interruption support
@@ -415,6 +467,12 @@ export default function VoiceCall() {
       }
       setIsListening(false);
       recognitionRef.current = null; // Clear the reference
+    }
+    
+    // Clear any pending timeouts
+    if (sendTimeoutRef.current) {
+      clearTimeout(sendTimeoutRef.current);
+      sendTimeoutRef.current = null;
     }
     
     // Stop any ongoing speech
