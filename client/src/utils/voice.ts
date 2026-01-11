@@ -71,10 +71,10 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
     utterance.voice = femaleVoice;
   }
   
-  // Soothing, pleasant voice settings - calm and smooth to help users feel better
-  utterance.rate = 0.85;  // Slightly slower for a calm, soothing, pleasant listening experience
+  // Soothing, pleasant voice settings - optimized for call quality
+  utterance.rate = 0.9;   // Slightly faster for better call quality and responsiveness
   utterance.pitch = 1.0;  // Natural pitch - warm and pleasant without being too high or low
-  utterance.volume = 0.9;  // Gentle and pleasant, not overwhelming
+  utterance.volume = 0.95; // Clear and audible for good call quality
 }
 
 /**

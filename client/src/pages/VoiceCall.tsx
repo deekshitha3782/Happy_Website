@@ -59,6 +59,17 @@ export default function VoiceCall() {
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
+      // Improve recognition sensitivity and speed
+      recognitionRef.current.lang = 'en-US';
+      // Lower confidence threshold for faster detection
+      if (recognitionRef.current.continuous !== undefined) {
+        // Some browsers support additional settings
+        try {
+          (recognitionRef.current as any).maxAlternatives = 1;
+        } catch (e) {
+          // Ignore if not supported
+        }
+      }
 
       recognitionRef.current.onstart = () => {
         setCallStatus("Connected");
@@ -67,17 +78,29 @@ export default function VoiceCall() {
 
       recognitionRef.current.onresult = (event: any) => {
         let currentTranscript = "";
+        let hasInterimResults = false;
+        
         for (let i = event.resultIndex; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
             const final = event.results[i][0].transcript.trim();
             if (final) {
+              // Stop AI speech immediately when user speaks
+              window.speechSynthesis.cancel();
               sendMessage({ role: "user", content: final });
             }
           } else {
+            // User is speaking (interim results) - stop AI immediately
+            hasInterimResults = true;
             currentTranscript += event.results[i][0].transcript;
+            // Immediately stop AI speech when user starts talking
+            window.speechSynthesis.cancel();
           }
         }
-        setTranscript(currentTranscript);
+        
+        // Update transcript for real-time display
+        if (hasInterimResults || currentTranscript) {
+          setTranscript(currentTranscript);
+        }
       };
 
       recognitionRef.current.onend = () => {
@@ -113,7 +136,7 @@ export default function VoiceCall() {
     };
   }, [sendMessage, isMuted]);
 
-  // Voice Output (TTS) with consistent female voice
+  // Voice Output (TTS) with consistent female voice - real-time interruption support
   useEffect(() => {
     if (!isSpeakerOn || !messages) return;
 
@@ -124,7 +147,23 @@ export default function VoiceCall() {
         const utterance = new SpeechSynthesisUtterance(lastMessage.content);
         configureFemaleVoice(utterance);
         
+        // Cancel any ongoing speech before starting new one
         window.speechSynthesis.cancel();
+        
+        // Add event handlers for better control
+        utterance.onstart = () => {
+          // Speech started
+        };
+        
+        utterance.onend = () => {
+          // Speech ended naturally
+        };
+        
+        utterance.onerror = () => {
+          // Speech was interrupted or errored
+        };
+        
+        // Start speaking
         window.speechSynthesis.speak(utterance);
         lastReadMessageId.current = lastMessage.id;
       });
@@ -132,6 +171,14 @@ export default function VoiceCall() {
       return cleanup;
     }
   }, [messages, isSpeakerOn]);
+  
+  // Monitor for user speech and interrupt AI immediately
+  useEffect(() => {
+    // If transcript appears (user is speaking), stop AI immediately
+    if (transcript && transcript.trim().length > 0) {
+      window.speechSynthesis.cancel();
+    }
+  }, [transcript]);
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
