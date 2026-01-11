@@ -24,6 +24,9 @@ export default function VoiceCall() {
   const hasInitialized = useRef(false);
   const lastSentMessageRef = useRef<string>(""); // Prevent duplicate sends
   const sendTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce sending
+  const audioContextRef = useRef<AudioContext | null>(null); // Web Audio API for gain boost
+  const mediaStreamRef = useRef<MediaStream | null>(null); // Keep mic stream active
+  const recentAIMessagesRef = useRef<string[]>([]); // Track recent AI messages to filter echo
 
   // Detect device/browser type
   const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -76,12 +79,52 @@ export default function VoiceCall() {
       return;
     }
 
-    // Request microphone permission first (required on mobile)
+    // Request microphone permission with echo cancellation and gain boost
     const requestMicrophonePermission = async () => {
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          await navigator.mediaDevices.getUserMedia({ audio: true });
-          console.log("Microphone permission granted");
+          // Request audio with echo cancellation, noise suppression, and auto gain control
+          // This helps prevent AI voice from being picked up and boosts microphone sensitivity
+          const constraints: MediaStreamConstraints = {
+            audio: {
+              echoCancellation: true,      // Prevents AI voice from being picked up
+              noiseSuppression: true,        // Reduces background noise
+              autoGainControl: true,        // Automatically boosts quiet speech (fixes "screaming" issue)
+              sampleRate: 44100,            // High quality audio
+              channelCount: 1,               // Mono (sufficient for speech)
+            }
+          };
+          
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          mediaStreamRef.current = stream;
+          
+          // Use Web Audio API to boost microphone gain (especially for mobile)
+          try {
+            const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+            audioContextRef.current = new AudioContext();
+            const source = audioContextRef.current.createMediaStreamSource(stream);
+            const gainNode = audioContextRef.current.createGain();
+            
+            // Boost gain on mobile (phones need more amplification)
+            gainNode.gain.value = isMobile ? 2.5 : 1.5; // 2.5x boost on mobile, 1.5x on desktop
+            source.connect(gainNode);
+            
+            // Create a destination to keep the stream active
+            const destination = audioContextRef.current.createMediaStreamDestination();
+            gainNode.connect(destination);
+            
+            console.log("✅ Microphone configured with echo cancellation and gain boost:", {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              gainBoost: isMobile ? "2.5x" : "1.5x",
+              isMobile
+            });
+          } catch (audioError) {
+            console.warn("Web Audio API not available, using default settings:", audioError);
+          }
+          
+          console.log("✅ Microphone permission granted with echo cancellation");
         }
       } catch (err) {
         console.error("Microphone permission denied:", err);
@@ -218,13 +261,27 @@ export default function VoiceCall() {
           console.log("📝 Transcript displayed:", displayTranscript);
         }
         
-        // Send final transcript to AI with noise filtering
+        // Send final transcript to AI with noise filtering and echo detection
         if (finalTranscript) {
           const trimmed = finalTranscript.trim();
           
+          // ECHO FILTERING: Check if this matches recent AI messages (AI voice being picked up)
+          const trimmedLower = trimmed.toLowerCase();
+          const isEcho = recentAIMessagesRef.current.some(aiMsg => {
+            // Check if user speech matches AI message (likely echo)
+            const similarity = calculateSimilarity(trimmedLower, aiMsg);
+            return similarity > 0.6; // 60% similarity = likely echo
+          });
+          
+          if (isEcho) {
+            console.log("🚫 ECHO DETECTED - Ignoring AI voice:", trimmed);
+            setTranscript(""); // Clear immediately
+            return; // Don't send echo to AI
+          }
+          
           // Noise filtering for mobile (phone microphones are sensitive)
           // Require minimum length and word count to filter out small sounds
-          const minLength = isMobile ? 10 : 5; // At least 10 chars on mobile (filters noise)
+          const minLength = isMobile ? 8 : 5; // Reduced from 10 to 8 (gain boost helps)
           const minWords = isMobile ? 2 : 1; // At least 2 words on mobile
           const wordCount = trimmed.split(/\s+/).filter(w => w.length > 0).length;
           
@@ -237,7 +294,8 @@ export default function VoiceCall() {
             minLength,
             wordCount,
             minWords,
-            hasLetters
+            hasLetters,
+            isEcho: false
           });
           
           if (trimmed.length >= minLength && wordCount >= minWords && hasLetters) {
@@ -355,6 +413,16 @@ export default function VoiceCall() {
                 // Ignore errors if already stopped
               }
               recognitionRef.current = null; // Clear reference
+            }
+            // Stop and cleanup audio stream
+            if (mediaStreamRef.current) {
+              mediaStreamRef.current.getTracks().forEach(track => track.stop());
+              mediaStreamRef.current = null;
+            }
+            // Close audio context
+            if (audioContextRef.current) {
+              audioContextRef.current.close().catch(console.error);
+              audioContextRef.current = null;
             }
             // Clear any pending timeouts
             if (sendTimeoutRef.current) {
