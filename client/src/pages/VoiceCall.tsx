@@ -111,7 +111,7 @@ export default function VoiceCall() {
       recognitionRef.current.onstart = () => {
         setCallStatus("Connected");
         setIsListening(true);
-        console.log("Speech recognition started");
+        console.log("Speech recognition started - listening continuously");
       };
 
       recognitionRef.current.onerror = (event: any) => {
@@ -191,42 +191,42 @@ export default function VoiceCall() {
       };
 
       recognitionRef.current.onend = () => {
-        // On mobile, don't auto-restart - let user manually restart if needed
-        // Desktop can auto-restart for continuous listening
-        if (isMobile) {
-          setIsListening(false);
-          if (!isMuted) {
-            setCallStatus("Tap to restart listening");
-          }
-          return;
-        }
-
-        // Desktop: auto-restart for continuous listening
+        // Auto-restart for continuous listening (works on both mobile and desktop)
+        // This keeps the call connected continuously
         if (!isMuted && recognitionRef.current) {
           try {
-            // Longer delay for better reliability
+            // Small delay before restarting (mobile needs slightly longer)
+            const delay = isMobile ? 300 : 200;
             setTimeout(() => {
               if (recognitionRef.current && !isMuted) {
                 try {
                   recognitionRef.current.start();
-                  console.log("Speech recognition restarted");
-                } catch (e) {
+                  console.log("Speech recognition restarted (continuous listening)");
+                  // Keep status as Connected if it was connected
+                  if (callStatus === "Connected" || isListening) {
+                    setCallStatus("Connected");
+                    setIsListening(true);
+                  }
+                } catch (e: any) {
                   console.log("Could not restart recognition:", e);
                   // Try again after a longer delay
                   setTimeout(() => {
                     if (recognitionRef.current && !isMuted) {
                       try {
                         recognitionRef.current.start();
+                        setCallStatus("Connected");
+                        setIsListening(true);
+                        console.log("Speech recognition restarted after retry");
                       } catch (e2) {
                         console.error("Failed to restart recognition after retry");
                         setIsListening(false);
-                        setCallStatus("Tap to restart listening");
+                        setCallStatus("Tap 'Start Listening' to reconnect");
                       }
                     }
-                  }, 2000);
+                  }, isMobile ? 1000 : 2000);
                 }
               }
-            }, 500); // Increased delay for better reliability
+            }, delay);
           } catch (e) {
             // Ignore errors if recognition was stopped/aborted
             console.log("Speech recognition stopped");
