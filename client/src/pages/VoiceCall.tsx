@@ -130,6 +130,25 @@ export default function VoiceCall() {
     }
   };
 
+  const handleEndCall = () => {
+    // Stop speech recognition
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+    
+    // Stop any ongoing speech
+    window.speechSynthesis.cancel();
+    
+    // Clear all messages from the call so they don't appear in chat
+    clearChat(undefined, {
+      onSuccess: () => {
+        // Navigate to chat after clearing
+        setLocation("/chat");
+      },
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-between p-8 font-sans overflow-hidden">
       {/* Top Info */}
@@ -234,7 +253,7 @@ export default function VoiceCall() {
           <Button
             size="icon"
             variant="destructive"
-            onClick={() => setLocation("/chat")}
+            onClick={handleEndCall}
             className="w-20 h-20 rounded-full shadow-lg shadow-red-500/20"
           >
             <PhoneOff size={32} />
