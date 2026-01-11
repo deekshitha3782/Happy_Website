@@ -51,6 +51,13 @@ export default function Chat() {
     }
   }, [messages, isVoiceEnabled]);
 
+  // Stop voice when component unmounts (e.g., navigating to Call AI)
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, []);
+
   // Auto-scroll to bottom
   useEffect(() => {
     if (messagesEndRef.current) {

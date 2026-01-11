@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { PhoneOff, Mic, MicOff, Volume2, VolumeX, CloudSun, HeartHandshake } from "lucide-react";
-import { useMessages, useSendMessage } from "@/hooks/use-messages";
+import { useMessages, useSendMessage, useClearChat } from "@/hooks/use-messages";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { configureFemaleVoice, waitForVoices } from "@/utils/voice";
@@ -11,6 +11,7 @@ export default function VoiceCall() {
   const [, setLocation] = useLocation();
   const { data: messages } = useMessages();
   const { mutate: sendMessage, isPending: isSending } = useSendMessage();
+  const { mutate: clearChat } = useClearChat();
   
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -20,6 +21,36 @@ export default function VoiceCall() {
   
   const recognitionRef = useRef<any>(null);
   const lastReadMessageId = useRef<number | null>(null);
+  const hasInitialized = useRef(false);
+
+  // Stop any chat voice and clear chat when Call AI starts, then send greeting
+  useEffect(() => {
+    // Stop any ongoing speech from chat immediately
+    window.speechSynthesis.cancel();
+    
+    // Clear chat and send greeting on first mount
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
+      
+      // Clear existing messages first
+      clearChat(undefined, {
+        onSuccess: () => {
+          // After clearing, send a greeting trigger to start fresh conversation
+          // The AI will respond with a warm greeting
+          setTimeout(() => {
+            sendMessage(
+              { role: "user", content: "Hi, I'd like to talk" },
+              {
+                onSuccess: () => {
+                  // The AI will generate a greeting response asking what's the issue
+                },
+              }
+            );
+          }, 800); // Delay to ensure chat is fully cleared
+        },
+      });
+    }
+  }, [clearChat, sendMessage]);
 
   // Initialize Speech Recognition
   useEffect(() => {
