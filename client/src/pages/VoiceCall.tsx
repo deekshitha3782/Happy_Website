@@ -7,6 +7,18 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { configureFemaleVoice, waitForVoices } from "@/utils/voice";
 
+// Helper function to calculate similarity between two strings (for echo detection)
+function calculateSimilarity(str1: string, str2: string): number {
+  const words1 = str1.split(/\s+/).filter(w => w.length > 2); // Ignore short words
+  const words2 = str2.split(/\s+/).filter(w => w.length > 2);
+  
+  if (words1.length === 0 || words2.length === 0) return 0;
+  
+  // Count matching words
+  const matches = words1.filter(w => words2.includes(w)).length;
+  return matches / Math.max(words1.length, words2.length);
+}
+
 export default function VoiceCall() {
   const [, setLocation] = useLocation();
   const { data: messages } = useMessages();
@@ -440,6 +452,12 @@ export default function VoiceCall() {
 
     const lastMessage = messages[messages.length - 1];
     if (lastMessage && lastMessage.role === "assistant" && lastMessage.id !== lastReadMessageId.current) {
+      // Store AI message to filter echo (keep last 3 AI messages)
+      recentAIMessagesRef.current.push(lastMessage.content.toLowerCase());
+      if (recentAIMessagesRef.current.length > 3) {
+        recentAIMessagesRef.current.shift(); // Keep only last 3
+      }
+      
       // Wait for voices to be loaded, then speak
       const cleanup = waitForVoices(() => {
         const utterance = new SpeechSynthesisUtterance(lastMessage.content);
@@ -450,18 +468,19 @@ export default function VoiceCall() {
         
         // Add event handlers for better control
         utterance.onstart = () => {
-          // Speech started
+          // Speech started - recognition continues running (continuous mode)
         };
         
         utterance.onend = () => {
-          // Speech ended naturally
+          // Speech ended naturally - recognition still running
         };
         
         utterance.onerror = () => {
-          // Speech was interrupted or errored
+          // Speech was interrupted or errored - recognition still running
         };
         
         // Start speaking
+        // IMPORTANT: Recognition continues running even when AI speaks (continuous listening)
         window.speechSynthesis.speak(utterance);
         lastReadMessageId.current = lastMessage.id;
       });
