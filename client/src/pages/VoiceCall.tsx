@@ -111,14 +111,20 @@ export default function VoiceCall() {
       recognitionRef.current.onstart = () => {
         setCallStatus("Connected");
         setIsListening(true);
-        console.log("Speech recognition started - listening continuously");
+        console.log("✅ Speech recognition started - listening continuously");
+        console.log("📱 Device info:", { isMobile, userAgent: navigator.userAgent.substring(0, 50) });
       };
 
       recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error);
+        console.error("❌ Speech recognition error:", event.error, {
+          isMobile,
+          isListening,
+          isMuted
+        });
         if (event.error === 'no-speech') {
           // This is normal, just means no speech detected yet - don't show error
           // Keep recognition running
+          console.log("ℹ️ No speech detected (normal - keep listening)");
           return;
         }
         if (event.error === 'audio-capture') {
@@ -155,21 +161,35 @@ export default function VoiceCall() {
       };
 
       recognitionRef.current.onresult = (event: any) => {
+        console.log("🔊 Speech recognition result received:", {
+          resultIndex: event.resultIndex,
+          resultsLength: event.results.length,
+          isMobile: isMobile
+        });
+        
         let currentTranscript = "";
         let hasInterimResults = false;
         let finalTranscript = "";
         
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          const confidence = event.results[i][0].confidence || 0.5;
+          const result = event.results[i];
+          const transcript = result[0].transcript;
+          // Mobile browsers often don't provide confidence, so use lower threshold
+          const confidence = result[0].confidence || (isMobile ? 0.1 : 0.5);
           
-          if (event.results[i].isFinal) {
-            // Only process final results with reasonable confidence and length
+          console.log(`  Result ${i}: "${transcript}" (final: ${result.isFinal}, confidence: ${confidence})`);
+          
+          if (result.isFinal) {
+            // Process final results - lower threshold on mobile
             const final = transcript.trim();
-            if (final && final.length >= 2 && confidence > 0.3) {
+            const minConfidence = isMobile ? 0.1 : 0.3; // Much lower threshold on mobile
+            if (final && final.length >= 1 && confidence >= minConfidence) {
               finalTranscript = final;
               // Stop AI speech immediately when user speaks
               window.speechSynthesis.cancel();
+              console.log("✅ Final transcript ready:", finalTranscript);
+            } else {
+              console.log("⚠️ Final transcript rejected:", { final, length: final.length, confidence, minConfidence });
             }
           } else {
             // User is speaking (interim results) - stop AI immediately
@@ -177,6 +197,7 @@ export default function VoiceCall() {
             currentTranscript += transcript;
             // Immediately stop AI speech when user starts talking
             window.speechSynthesis.cancel();
+            console.log("📝 Interim transcript:", currentTranscript);
           }
         }
         
@@ -185,12 +206,16 @@ export default function VoiceCall() {
           setTranscript(currentTranscript);
         }
         
-        // Only send message if we have a valid final transcript (minimum 2 characters, reasonable confidence)
-        if (finalTranscript && finalTranscript.length >= 2) {
-          console.log("Sending message:", finalTranscript);
+        // Only send message if we have a valid final transcript
+        // Lower minimum length on mobile (1 character vs 2)
+        const minLength = isMobile ? 1 : 2;
+        if (finalTranscript && finalTranscript.length >= minLength) {
+          console.log("📤 Sending message to AI:", finalTranscript);
           sendMessage({ role: "user", content: finalTranscript });
           // Clear transcript after sending
           setTranscript("");
+        } else if (finalTranscript) {
+          console.log("⚠️ Message too short, not sending:", finalTranscript);
         }
       };
 
