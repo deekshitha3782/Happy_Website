@@ -52,12 +52,24 @@ export default function VoiceCall() {
     }
   }, [clearChat, sendMessage]);
 
+  // Detect if iOS Safari (doesn't support Web Speech API)
+  const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
   // Initialize Speech Recognition with mobile support
   useEffect(() => {
+    // Check for iOS Safari - doesn't support Web Speech API
+    if (isIOSSafari && isSafari) {
+      setCallStatus("iOS Safari doesn't support voice calls. Please use Chrome or Firefox on iOS.");
+      console.error("iOS Safari doesn't support Web Speech API");
+      return;
+    }
+
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
     
     if (!SpeechRecognition) {
-      setCallStatus("Speech recognition not supported");
+      setCallStatus("Speech recognition not supported in this browser. Try Chrome or Firefox.");
       console.error("Speech Recognition API not available");
       return;
     }
@@ -179,10 +191,20 @@ export default function VoiceCall() {
       };
 
       recognitionRef.current.onend = () => {
-        // Only restart if not muted and recognition ref still exists (call not ended)
+        // On mobile, don't auto-restart - let user manually restart if needed
+        // Desktop can auto-restart for continuous listening
+        if (isMobile) {
+          setIsListening(false);
+          if (!isMuted) {
+            setCallStatus("Tap to restart listening");
+          }
+          return;
+        }
+
+        // Desktop: auto-restart for continuous listening
         if (!isMuted && recognitionRef.current) {
           try {
-            // Longer delay for better reliability, especially on mobile
+            // Longer delay for better reliability
             setTimeout(() => {
               if (recognitionRef.current && !isMuted) {
                 try {
@@ -197,36 +219,43 @@ export default function VoiceCall() {
                         recognitionRef.current.start();
                       } catch (e2) {
                         console.error("Failed to restart recognition after retry");
+                        setIsListening(false);
+                        setCallStatus("Tap to restart listening");
                       }
                     }
                   }, 2000);
                 }
               }
-            }, 300); // Increased delay for better reliability
+            }, 500); // Increased delay for better reliability
           } catch (e) {
             // Ignore errors if recognition was stopped/aborted
             console.log("Speech recognition stopped");
+            setIsListening(false);
           }
+        } else {
+          setIsListening(false);
         }
       };
 
-      // Start recognition - on mobile, this must be triggered by user interaction
-      // We'll start it after a small delay to ensure everything is ready
-      setTimeout(() => {
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.start();
-            setCallStatus("Connecting...");
-          } catch (e: any) {
-            console.error("Failed to start recognition:", e);
-            if (e.message && e.message.includes('must be triggered')) {
-              setCallStatus("Tap to start listening");
-            } else {
-              setCallStatus("Failed to start");
+      // On mobile, don't auto-start - require user interaction
+      // Desktop can auto-start, but mobile browsers block it
+      if (isMobile) {
+        setCallStatus("Tap 'Start Listening' to begin");
+        console.log("Mobile detected - waiting for user interaction");
+      } else {
+        // Desktop: auto-start after delay
+        setTimeout(() => {
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.start();
+              setCallStatus("Connecting...");
+            } catch (e: any) {
+              console.error("Failed to start recognition:", e);
+              setCallStatus("Tap 'Start Listening' to begin");
             }
           }
-        }
-      }, 500);
+        }, 500);
+      }
     };
 
     // Initialize on mount
@@ -293,14 +322,34 @@ export default function VoiceCall() {
   }, [transcript]);
 
   // Add manual start button for mobile browsers that require user interaction
-  const handleStartListening = () => {
+  const handleStartListening = async () => {
+    // Request permission first on mobile
+    if (isMobile) {
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          await navigator.mediaDevices.getUserMedia({ audio: true });
+          console.log("Microphone permission granted");
+        }
+      } catch (err) {
+        console.error("Microphone permission denied:", err);
+        setCallStatus("Microphone permission required - check browser settings");
+        return;
+      }
+    }
+
     if (recognitionRef.current) {
       try {
         recognitionRef.current.start();
         setCallStatus("Connecting...");
+        setIsListening(true);
       } catch (e: any) {
         console.error("Failed to start:", e);
-        setCallStatus("Failed to start - check permissions");
+        if (e.message && e.message.includes('already started')) {
+          // Already running, that's fine
+          setCallStatus("Connected");
+        } else {
+          setCallStatus("Failed to start - check permissions");
+        }
       }
     } else {
       setCallStatus("Speech recognition not initialized");
