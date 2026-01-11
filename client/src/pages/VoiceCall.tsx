@@ -415,10 +415,18 @@ export default function VoiceCall() {
         )}>
           {callStatus}
         </p>
-        {callStatus.includes("Tap to start") || callStatus.includes("Failed to start") ? (
+        {(!callStatus.includes("Connected") && 
+          !callStatus.includes("iOS Safari") && 
+          !callStatus.includes("not supported") &&
+          (callStatus.includes("Tap") || 
+           callStatus.includes("Start Listening") || 
+           callStatus.includes("Failed") ||
+           callStatus.includes("Connecting") ||
+           callStatus.includes("permission") ||
+           (isMobile && !isListening && callStatus !== "Connected"))) ? (
           <button
             onClick={handleStartListening}
-            className="mt-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+            className="mt-2 px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors touch-manipulation shadow-lg active:scale-95"
           >
             Start Listening
           </button>
