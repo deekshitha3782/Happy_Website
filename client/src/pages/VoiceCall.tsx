@@ -175,7 +175,7 @@ export default function VoiceCall() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-between p-4 sm:p-6 md:p-8 font-sans overflow-hidden safe-area-inset">
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-between p-4 sm:p-6 md:p-8 font-sans overflow-hidden">
       {/* Top Info */}
       <header className="w-full flex flex-col items-center gap-2 mt-4 sm:mt-8 md:mt-12">
         <motion.div 
