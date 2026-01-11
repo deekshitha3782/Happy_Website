@@ -81,8 +81,14 @@ export default function VoiceCall() {
       };
 
       recognitionRef.current.onend = () => {
-        if (!isMuted) {
-          recognitionRef.current.start();
+        // Only restart if not muted and recognition ref still exists (call not ended)
+        if (!isMuted && recognitionRef.current) {
+          try {
+            recognitionRef.current.start();
+          } catch (e) {
+            // Ignore errors if recognition was stopped/aborted
+            console.log("Speech recognition stopped");
+          }
         }
       };
 
@@ -92,10 +98,18 @@ export default function VoiceCall() {
     }
 
     return () => {
+      // Complete cleanup when component unmounts or dependencies change
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try {
+          recognitionRef.current.stop();
+          recognitionRef.current.abort(); // Force stop
+        } catch (e) {
+          // Ignore errors if already stopped
+        }
+        recognitionRef.current = null; // Clear reference
       }
       window.speechSynthesis.cancel();
+      setIsListening(false);
     };
   }, [sendMessage, isMuted]);
 
@@ -131,20 +145,31 @@ export default function VoiceCall() {
   };
 
   const handleEndCall = () => {
-    // Stop speech recognition
+    // Completely stop and clean up speech recognition
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+        recognitionRef.current.abort(); // Force stop
+      } catch (e) {
+        // Ignore errors if already stopped
+      }
       setIsListening(false);
+      recognitionRef.current = null; // Clear the reference
     }
     
     // Stop any ongoing speech
     window.speechSynthesis.cancel();
     
+    // Clear transcript
+    setTranscript("");
+    
     // Clear all messages from the call so they don't appear in chat
     clearChat(undefined, {
       onSuccess: () => {
-        // Navigate to chat after clearing
-        setLocation("/chat");
+        // Small delay to ensure everything is cleaned up before navigation
+        setTimeout(() => {
+          setLocation("/chat");
+        }, 100);
       },
     });
   };
