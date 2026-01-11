@@ -5,6 +5,7 @@ import { PhoneOff, Mic, MicOff, Volume2, VolumeX, CloudSun, HeartHandshake } fro
 import { useMessages, useSendMessage } from "@/hooks/use-messages";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { configureFemaleVoice, waitForVoices } from "@/utils/voice";
 
 export default function VoiceCall() {
   const [, setLocation] = useLocation();
@@ -67,21 +68,23 @@ export default function VoiceCall() {
     };
   }, [sendMessage, isMuted]);
 
-  // Voice Output (TTS)
+  // Voice Output (TTS) with consistent female voice
   useEffect(() => {
     if (!isSpeakerOn || !messages) return;
 
     const lastMessage = messages[messages.length - 1];
     if (lastMessage && lastMessage.role === "assistant" && lastMessage.id !== lastReadMessageId.current) {
-      const utterance = new SpeechSynthesisUtterance(lastMessage.content);
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => v.name.includes("Female") || v.name.includes("Google US English")) || voices[0];
-      if (preferredVoice) utterance.voice = preferredVoice;
-      utterance.rate = 0.9;
-      
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
-      lastReadMessageId.current = lastMessage.id;
+      // Wait for voices to be loaded, then speak
+      const cleanup = waitForVoices(() => {
+        const utterance = new SpeechSynthesisUtterance(lastMessage.content);
+        configureFemaleVoice(utterance);
+        
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+        lastReadMessageId.current = lastMessage.id;
+      });
+
+      return cleanup;
     }
   }, [messages, isSpeakerOn]);
 

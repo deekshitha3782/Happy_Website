@@ -8,6 +8,7 @@ import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { configureFemaleVoice, waitForVoices } from "@/utils/voice";
 
 export default function Chat() {
   const { data: messages, isLoading, error: messagesError } = useMessages();
@@ -30,24 +31,23 @@ export default function Chat() {
     }
   }, [isLoading, messages, clearChat]);
 
-  // Voice output logic
+  // Voice output logic with consistent female voice
   useEffect(() => {
     if (!isVoiceEnabled || !messages) return;
 
     const lastMessage = messages[messages.length - 1];
     if (lastMessage && lastMessage.role === "assistant" && lastMessage.id !== lastReadMessageId.current) {
-      const utterance = new SpeechSynthesisUtterance(lastMessage.content);
-      // Try to find a calming voice
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => v.name.includes("Female") || v.name.includes("Google US English")) || voices[0];
-      if (preferredVoice) utterance.voice = preferredVoice;
-      
-      utterance.rate = 0.9; // Slightly slower for calming effect
-      utterance.pitch = 1.0;
-      
-      window.speechSynthesis.cancel(); // Stop any current speech
-      window.speechSynthesis.speak(utterance);
-      lastReadMessageId.current = lastMessage.id;
+      // Wait for voices to be loaded, then speak
+      const cleanup = waitForVoices(() => {
+        const utterance = new SpeechSynthesisUtterance(lastMessage.content);
+        configureFemaleVoice(utterance);
+        
+        window.speechSynthesis.cancel(); // Stop any current speech
+        window.speechSynthesis.speak(utterance);
+        lastReadMessageId.current = lastMessage.id;
+      });
+
+      return cleanup;
     }
   }, [messages, isVoiceEnabled]);
 
@@ -89,9 +89,13 @@ export default function Chat() {
   const toggleVoice = () => {
     setIsVoiceEnabled(!isVoiceEnabled);
     if (!isVoiceEnabled) {
-      // Small feedback that voice is now on
-      const utterance = new SpeechSynthesisUtterance("Voice mode enabled");
-      window.speechSynthesis.speak(utterance);
+      // Small feedback that voice is now on with consistent female voice
+      const cleanup = waitForVoices(() => {
+        const utterance = new SpeechSynthesisUtterance("Voice mode enabled");
+        configureFemaleVoice(utterance);
+        window.speechSynthesis.speak(utterance);
+      });
+      // Note: cleanup will be called automatically when voices are loaded
     } else {
       window.speechSynthesis.cancel();
     }
