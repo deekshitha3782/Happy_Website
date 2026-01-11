@@ -135,18 +135,22 @@ export default function VoiceCall() {
           // Don't show error for minor issues, just log
         }
         
-        // Try to restart if it's a recoverable error
+        // Try to restart if it's a recoverable error (keep connection alive)
         if (event.error !== 'aborted' && event.error !== 'not-allowed' && event.error !== 'no-speech') {
           setTimeout(() => {
             if (recognitionRef.current && !isMuted) {
               try {
                 recognitionRef.current.start();
-                console.log("Restarted recognition after error");
+                setCallStatus("Connected");
+                setIsListening(true);
+                console.log("Restarted recognition after error - reconnected");
               } catch (e) {
                 console.log("Could not restart recognition:", e);
+                setIsListening(false);
+                setCallStatus("Tap 'Start Listening' to reconnect");
               }
             }
-          }, 1500);
+          }, isMobile ? 1000 : 1500);
         }
       };
 
