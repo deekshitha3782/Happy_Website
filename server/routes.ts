@@ -210,9 +210,18 @@ export async function registerRoutes(
       const input = api.messages.create.input.parse(req.body);
       console.log("POST /api/messages - Input validated:", { role: input.role, contentLength: input.content.length });
       
-      // 1. Save user message
+      // 1. Validate user message - prevent empty or very short messages
+      const userMessage = input.content.trim();
+      if (!userMessage || userMessage.length < 2) {
+        console.log("POST /api/messages - Rejected: message too short or empty");
+        return res.status(400).json({ 
+          error: "Message too short. Please speak clearly or type a longer message." 
+        });
+      }
+      
+      // Save user message
       await storage.createMessage(input);
-      console.log("POST /api/messages - User message saved");
+      console.log("POST /api/messages - User message saved:", userMessage.substring(0, 50));
 
       // 2. Get history for context
       const history = await storage.getMessages();

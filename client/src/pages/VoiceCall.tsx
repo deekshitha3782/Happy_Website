@@ -105,47 +105,60 @@ export default function VoiceCall() {
       recognitionRef.current.onerror = (event: any) => {
         console.error("Speech recognition error:", event.error);
         if (event.error === 'no-speech') {
-          // This is normal, just means no speech detected yet
+          // This is normal, just means no speech detected yet - don't show error
+          // Keep recognition running
           return;
         }
         if (event.error === 'audio-capture') {
           setCallStatus("Microphone not found");
         } else if (event.error === 'not-allowed') {
           setCallStatus("Microphone permission denied");
+        } else if (event.error === 'network') {
+          setCallStatus("Network error - check connection");
+        } else if (event.error === 'aborted') {
+          // Aborted is normal when we stop it manually
+          return;
         } else {
-          setCallStatus(`Error: ${event.error}`);
+          console.log("Recognition error (non-critical):", event.error);
+          // Don't show error for minor issues, just log
         }
         
         // Try to restart if it's a recoverable error
-        if (event.error !== 'aborted' && event.error !== 'not-allowed') {
+        if (event.error !== 'aborted' && event.error !== 'not-allowed' && event.error !== 'no-speech') {
           setTimeout(() => {
             if (recognitionRef.current && !isMuted) {
               try {
                 recognitionRef.current.start();
+                console.log("Restarted recognition after error");
               } catch (e) {
                 console.log("Could not restart recognition:", e);
               }
             }
-          }, 1000);
+          }, 1500);
         }
       };
 
       recognitionRef.current.onresult = (event: any) => {
         let currentTranscript = "";
         let hasInterimResults = false;
+        let finalTranscript = "";
         
         for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          const confidence = event.results[i][0].confidence || 0.5;
+          
           if (event.results[i].isFinal) {
-            const final = event.results[i][0].transcript.trim();
-            if (final) {
+            // Only process final results with reasonable confidence and length
+            const final = transcript.trim();
+            if (final && final.length >= 2 && confidence > 0.3) {
+              finalTranscript = final;
               // Stop AI speech immediately when user speaks
               window.speechSynthesis.cancel();
-              sendMessage({ role: "user", content: final });
             }
           } else {
             // User is speaking (interim results) - stop AI immediately
             hasInterimResults = true;
-            currentTranscript += event.results[i][0].transcript;
+            currentTranscript += transcript;
             // Immediately stop AI speech when user starts talking
             window.speechSynthesis.cancel();
           }
@@ -155,18 +168,41 @@ export default function VoiceCall() {
         if (hasInterimResults || currentTranscript) {
           setTranscript(currentTranscript);
         }
+        
+        // Only send message if we have a valid final transcript (minimum 2 characters, reasonable confidence)
+        if (finalTranscript && finalTranscript.length >= 2) {
+          console.log("Sending message:", finalTranscript);
+          sendMessage({ role: "user", content: finalTranscript });
+          // Clear transcript after sending
+          setTranscript("");
+        }
       };
 
       recognitionRef.current.onend = () => {
         // Only restart if not muted and recognition ref still exists (call not ended)
         if (!isMuted && recognitionRef.current) {
           try {
-            // Small delay for mobile browsers
+            // Longer delay for better reliability, especially on mobile
             setTimeout(() => {
               if (recognitionRef.current && !isMuted) {
-                recognitionRef.current.start();
+                try {
+                  recognitionRef.current.start();
+                  console.log("Speech recognition restarted");
+                } catch (e) {
+                  console.log("Could not restart recognition:", e);
+                  // Try again after a longer delay
+                  setTimeout(() => {
+                    if (recognitionRef.current && !isMuted) {
+                      try {
+                        recognitionRef.current.start();
+                      } catch (e2) {
+                        console.error("Failed to restart recognition after retry");
+                      }
+                    }
+                  }, 2000);
+                }
               }
-            }, 100);
+            }, 300); // Increased delay for better reliability
           } catch (e) {
             // Ignore errors if recognition was stopped/aborted
             console.log("Speech recognition stopped");
