@@ -52,28 +52,82 @@ export default function VoiceCall() {
     }
   }, [clearChat, sendMessage]);
 
-  // Initialize Speech Recognition
+  // Initialize Speech Recognition with mobile support
   useEffect(() => {
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-    if (SpeechRecognition) {
+    
+    if (!SpeechRecognition) {
+      setCallStatus("Speech recognition not supported");
+      console.error("Speech Recognition API not available");
+      return;
+    }
+
+    // Request microphone permission first (required on mobile)
+    const requestMicrophonePermission = async () => {
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          await navigator.mediaDevices.getUserMedia({ audio: true });
+          console.log("Microphone permission granted");
+        }
+      } catch (err) {
+        console.error("Microphone permission denied:", err);
+        setCallStatus("Microphone permission required");
+        return;
+      }
+    };
+
+    const initSpeechRecognition = async () => {
+      // Request permission first
+      await requestMicrophonePermission();
+
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
-      // Improve recognition sensitivity and speed
       recognitionRef.current.lang = 'en-US';
-      // Lower confidence threshold for faster detection
-      if (recognitionRef.current.continuous !== undefined) {
-        // Some browsers support additional settings
-        try {
-          (recognitionRef.current as any).maxAlternatives = 1;
-        } catch (e) {
-          // Ignore if not supported
+      
+      // Mobile-specific settings
+      try {
+        (recognitionRef.current as any).maxAlternatives = 1;
+        // Some mobile browsers need this
+        if ((recognitionRef.current as any).serviceURI === undefined) {
+          // Not a service-based recognition, use standard
         }
+      } catch (e) {
+        console.log("Some recognition settings not supported");
       }
 
       recognitionRef.current.onstart = () => {
         setCallStatus("Connected");
         setIsListening(true);
+        console.log("Speech recognition started");
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error("Speech recognition error:", event.error);
+        if (event.error === 'no-speech') {
+          // This is normal, just means no speech detected yet
+          return;
+        }
+        if (event.error === 'audio-capture') {
+          setCallStatus("Microphone not found");
+        } else if (event.error === 'not-allowed') {
+          setCallStatus("Microphone permission denied");
+        } else {
+          setCallStatus(`Error: ${event.error}`);
+        }
+        
+        // Try to restart if it's a recoverable error
+        if (event.error !== 'aborted' && event.error !== 'not-allowed') {
+          setTimeout(() => {
+            if (recognitionRef.current && !isMuted) {
+              try {
+                recognitionRef.current.start();
+              } catch (e) {
+                console.log("Could not restart recognition:", e);
+              }
+            }
+          }, 1000);
+        }
       };
 
       recognitionRef.current.onresult = (event: any) => {
@@ -107,7 +161,12 @@ export default function VoiceCall() {
         // Only restart if not muted and recognition ref still exists (call not ended)
         if (!isMuted && recognitionRef.current) {
           try {
-            recognitionRef.current.start();
+            // Small delay for mobile browsers
+            setTimeout(() => {
+              if (recognitionRef.current && !isMuted) {
+                recognitionRef.current.start();
+              }
+            }, 100);
           } catch (e) {
             // Ignore errors if recognition was stopped/aborted
             console.log("Speech recognition stopped");
@@ -115,10 +174,27 @@ export default function VoiceCall() {
         }
       };
 
-      recognitionRef.current.start();
-    } else {
-      setCallStatus("Speech not supported");
-    }
+      // Start recognition - on mobile, this must be triggered by user interaction
+      // We'll start it after a small delay to ensure everything is ready
+      setTimeout(() => {
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.start();
+            setCallStatus("Connecting...");
+          } catch (e: any) {
+            console.error("Failed to start recognition:", e);
+            if (e.message && e.message.includes('must be triggered')) {
+              setCallStatus("Tap to start listening");
+            } else {
+              setCallStatus("Failed to start");
+            }
+          }
+        }
+      }, 500);
+    };
+
+    // Initialize on mount
+    initSpeechRecognition();
 
     return () => {
       // Complete cleanup when component unmounts or dependencies change
@@ -239,6 +315,14 @@ export default function VoiceCall() {
         )}>
           {callStatus}
         </p>
+        {callStatus.includes("Tap to start") || callStatus.includes("Failed to start") ? (
+          <button
+            onClick={handleStartListening}
+            className="mt-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            Start Listening
+          </button>
+        ) : null}
       </header>
 
       {/* Visualizer / Avatar */}
