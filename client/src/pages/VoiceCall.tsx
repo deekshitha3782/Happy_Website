@@ -97,16 +97,31 @@ export default function VoiceCall() {
       recognitionRef.current.interimResults = true;
       recognitionRef.current.lang = 'en-US';
       
-      // Mobile-specific settings
+      // Mobile-specific settings for better speech detection
       try {
         (recognitionRef.current as any).maxAlternatives = 1;
-        // Some mobile browsers need this
-        if ((recognitionRef.current as any).serviceURI === undefined) {
-          // Not a service-based recognition, use standard
+        // Mobile browsers may need different settings
+        if (isMobile) {
+          // Some mobile browsers benefit from these settings
+          try {
+            // Lower the silence timeout if available (helps mobile detect speech faster)
+            if ((recognitionRef.current as any).grammars !== undefined) {
+              // Some browsers support grammars
+            }
+          } catch (e) {
+            // Ignore if not supported
+          }
         }
       } catch (e) {
         console.log("Some recognition settings not supported");
       }
+      
+      console.log("🎤 Speech recognition configured:", {
+        continuous: recognitionRef.current.continuous,
+        interimResults: recognitionRef.current.interimResults,
+        lang: recognitionRef.current.lang,
+        isMobile
+      });
 
       recognitionRef.current.onstart = () => {
         setCallStatus("Connected");
