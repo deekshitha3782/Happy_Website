@@ -241,25 +241,21 @@ export default function VoiceCall() {
         }
       };
 
-      // On mobile, don't auto-start - require user interaction
-      // Desktop can auto-start, but mobile browsers block it
-      if (isMobile) {
-        setCallStatus("Tap 'Start Listening' to begin");
-        console.log("Mobile detected - waiting for user interaction");
-      } else {
-        // Desktop: auto-start after delay
-        setTimeout(() => {
-          if (recognitionRef.current) {
-            try {
-              recognitionRef.current.start();
-              setCallStatus("Connecting...");
-            } catch (e: any) {
-              console.error("Failed to start recognition:", e);
-              setCallStatus("Tap 'Start Listening' to begin");
-            }
+      // Try to auto-start on both mobile and desktop
+      // Mobile browsers may block it, but we try anyway
+      setTimeout(() => {
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.start();
+            setCallStatus("Connecting...");
+            console.log("Attempting to auto-start recognition");
+          } catch (e: any) {
+            console.error("Failed to auto-start recognition:", e);
+            // If auto-start fails (common on mobile), show button
+            setCallStatus("Tap 'Start Listening' to begin");
           }
-        }, 500);
-      }
+        }
+      }, isMobile ? 800 : 500); // Slightly longer delay on mobile
     };
 
     // Initialize on mount
