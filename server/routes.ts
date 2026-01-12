@@ -219,6 +219,29 @@ export async function registerRoutes(
         });
       }
       
+      // SAFETY CHECK: Block harmful requests before processing
+      const userMessageLower = userMessage.toLowerCase();
+      const harmfulPatterns = [
+        /how to (die|kill|suicide|end myself|end my life)/,
+        /ways to (die|kill|suicide|end myself)/,
+        /methods to (die|kill|suicide|end myself)/,
+        /examples of (dying|killing|suicide)/,
+        /tell me how to (die|kill|suicide|end myself)/,
+        /show me how to (die|kill|suicide|end myself)/,
+        /give me (ways|methods|examples) to (die|kill|suicide|end myself)/
+      ];
+      
+      const isHarmfulRequest = harmfulPatterns.some(pattern => pattern.test(userMessageLower));
+      
+      if (isHarmfulRequest) {
+        console.log("🚫 SAFETY: Blocked harmful request:", userMessage.substring(0, 50));
+        // Save user message and safe response
+        await storage.createMessage(input);
+        const safeResponse = "I'm really concerned about you. Please reach out for help immediately. Call a crisis hotline, talk to a trusted friend or family member, or go to your nearest emergency room. Your life has value, and there are people who want to help you. Would you like me to help you find resources?";
+        const assistantMessage = await storage.createMessage({ role: "assistant", content: safeResponse });
+        return res.status(201).json(assistantMessage);
+      }
+      
       // Save user message
       await storage.createMessage(input);
       console.log("POST /api/messages - User message saved:", userMessage.substring(0, 50));
