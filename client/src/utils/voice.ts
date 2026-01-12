@@ -64,17 +64,53 @@ export function getFemaleVoice(): SpeechSynthesisVoice | null {
 /**
  * Configure a SpeechSynthesisUtterance with consistent female voice settings
  * Optimized for a soothing, pleasant, and calming experience for depressed users
+ * ENSURES SAME VOICE ACROSS ALL DEVICES
  */
 export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void {
-  const femaleVoice = getFemaleVoice();
-  if (femaleVoice) {
-    utterance.voice = femaleVoice;
+  // ALWAYS get fresh voice list to ensure consistency
+  const voices = window.speechSynthesis.getVoices();
+  
+  // Priority list - try to find the same voice name across devices
+  // These are common female voices that exist on multiple platforms
+  const preferredVoices = [
+    "Google US English Female",
+    "Microsoft Zira",
+    "Samantha",
+    "Karen",
+    "Google UK English Female",
+    "Microsoft Hazel",
+  ];
+  
+  let selectedVoice: SpeechSynthesisVoice | null = null;
+  
+  // First, try to find a preferred voice by exact name match
+  for (const preferredName of preferredVoices) {
+    const voice = voices.find(v => v.name === preferredName);
+    if (voice) {
+      selectedVoice = voice;
+      console.log(`✅ Using preferred voice: ${voice.name}`);
+      break;
+    }
   }
   
-  // Soothing, pleasant voice settings - optimized for call quality
-  utterance.rate = 0.9;   // Slightly faster for better call quality and responsiveness
-  utterance.pitch = 1.0;  // Natural pitch - warm and pleasant without being too high or low
-  utterance.volume = 0.95; // Clear and audible for good call quality
+  // If no preferred voice found, use getFemaleVoice() fallback
+  if (!selectedVoice) {
+    selectedVoice = getFemaleVoice();
+    if (selectedVoice) {
+      console.log(`✅ Using fallback female voice: ${selectedVoice.name}`);
+    }
+  }
+  
+  if (selectedVoice) {
+    utterance.voice = selectedVoice;
+  }
+  
+  // CONSISTENT voice settings across all devices
+  utterance.rate = 0.9;   // Same speed on all devices
+  utterance.pitch = 1.0;  // Same pitch on all devices
+  utterance.volume = 0.95; // Same volume on all devices
+  
+  console.log(`🎤 Voice configured: ${selectedVoice?.name || 'default'}, rate: ${utterance.rate}, pitch: ${utterance.pitch}`);
 }
 
 /**

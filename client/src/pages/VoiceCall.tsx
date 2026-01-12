@@ -168,33 +168,39 @@ export default function VoiceCall() {
         }
       };
 
-      // SIMPLIFIED: Match chat recording's onresult handler exactly
+      // FIXED: Only send final results - wait for complete sentence (especially on mobile)
       recognitionRef.current.onresult = (event: any) => {
-        // Same simple approach as chat recording - works perfectly on mobile!
-        let transcript = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        
-        // Update transcript display (show what's being captured)
-        if (transcript.trim()) {
-          setTranscript(transcript);
-          // Stop AI speech immediately when user speaks
-          window.speechSynthesis.cancel();
-        }
-        
-        // Only send final results (when user finishes speaking)
-        // Check if any result is final
-        let hasFinal = false;
+        let interimTranscript = "";
         let finalTranscript = "";
+        
+        // Separate interim and final results
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            hasFinal = true;
-            finalTranscript += event.results[i][0].transcript + " ";
+          const result = event.results[i];
+          const transcript = result[0].transcript || "";
+          
+          if (result.isFinal) {
+            // Final result - user finished speaking
+            finalTranscript += transcript + " ";
+          } else {
+            // Interim result - user is still speaking
+            interimTranscript += transcript;
           }
         }
         
-        if (hasFinal && finalTranscript.trim()) {
+        // Update transcript display (show interim while speaking, final when done)
+        if (interimTranscript.trim()) {
+          setTranscript(interimTranscript);
+        } else if (finalTranscript.trim()) {
+          setTranscript(finalTranscript.trim());
+        }
+        
+        // Stop AI speech immediately when user speaks (even interim)
+        if (interimTranscript.trim() || finalTranscript.trim()) {
+          window.speechSynthesis.cancel();
+        }
+        
+        // ONLY send final results - wait for complete sentence (works on mobile and desktop)
+        if (finalTranscript.trim()) {
           const trimmed = finalTranscript.trim();
           
           // ECHO FILTERING: Check if this matches recent AI messages
@@ -210,7 +216,7 @@ export default function VoiceCall() {
             return;
           }
           
-          // Simple validation - same as chat (just check it's not empty)
+          // Simple validation - check it's not empty
           if (trimmed.length >= 2) {
             // Prevent duplicates
             if (trimmed === lastSentMessageRef.current) {
@@ -218,8 +224,8 @@ export default function VoiceCall() {
               return;
             }
             
-            // Send to AI (no complex debouncing - keep it simple like chat)
-            console.log("✅ Sending to AI:", trimmed);
+            // Send to AI - only final results (complete sentences)
+            console.log("✅ Sending final result to AI:", trimmed);
             lastSentMessageRef.current = trimmed;
             sendMessage({ role: "user", content: trimmed });
             
@@ -309,7 +315,7 @@ export default function VoiceCall() {
           };
   }, [sendMessage, isMuted]);
 
-  // Voice Output (TTS) with consistent female voice - real-time interruption support
+  // Voice Output (TTS) with consistent female voice - turn mic off when AI speaks
   useEffect(() => {
     if (!isSpeakerOn || !messages) return;
 
@@ -329,28 +335,61 @@ export default function VoiceCall() {
         // Cancel any ongoing speech before starting new one
         window.speechSynthesis.cancel();
         
+        // TURN MIC OFF when AI starts speaking
+        if (recognitionRef.current && isListening) {
+          try {
+            recognitionRef.current.stop();
+            setIsListening(false);
+            console.log("🔇 Mic turned off - AI is speaking");
+          } catch (e) {
+            console.log("Could not stop recognition:", e);
+          }
+        }
+        
         // Add event handlers for better control
         utterance.onstart = () => {
-          // Speech started - recognition continues running (continuous mode)
+          // Speech started - mic is off
         };
         
         utterance.onend = () => {
-          // Speech ended naturally - recognition still running
+          // Speech ended - TURN MIC BACK ON
+          if (recognitionRef.current && !isMuted) {
+            setTimeout(() => {
+              try {
+                recognitionRef.current.start();
+                setIsListening(true);
+                console.log("🎤 Mic turned back on - AI finished speaking");
+              } catch (e: any) {
+                console.log("Could not restart recognition:", e.message);
+                setCallStatus("Tap 'Start Listening' to reconnect");
+              }
+            }, 300); // Small delay before restarting
+          }
         };
         
         utterance.onerror = () => {
-          // Speech was interrupted or errored - recognition still running
+          // Speech was interrupted - TURN MIC BACK ON
+          if (recognitionRef.current && !isMuted) {
+            setTimeout(() => {
+              try {
+                recognitionRef.current.start();
+                setIsListening(true);
+                console.log("🎤 Mic turned back on - AI speech interrupted");
+              } catch (e: any) {
+                console.log("Could not restart recognition:", e.message);
+              }
+            }, 300);
+          }
         };
         
         // Start speaking
-        // IMPORTANT: Recognition continues running even when AI speaks (continuous listening)
         window.speechSynthesis.speak(utterance);
         lastReadMessageId.current = lastMessage.id;
       });
 
       return cleanup;
     }
-  }, [messages, isSpeakerOn]);
+  }, [messages, isSpeakerOn, isListening, isMuted]);
   
   // Monitor for user speech and interrupt AI immediately
   useEffect(() => {

@@ -231,10 +231,10 @@ export async function registerRoutes(
         content: m.content
       }));
 
-      // 3. System prompt for focused depression recovery guide
+      // 3. System prompt for focused depression recovery guide - MAX 2 SENTENCES
       const systemMessage = {
         role: "system" as const,
-        content: "You are a focused depression recovery guide. Your ONLY purpose is to help the user overcome their depression. Stay strictly on topic - only discuss depression, their feelings, recovery strategies, and steps to feel better. Do NOT talk about irrelevant topics like weather, news, entertainment, or general chit-chat. Every response must directly address their depression and help them move forward. Be warm, compassionate, and understanding. Validate their feelings, then provide practical guidance and actionable steps. Keep responses CONCISE - use short sentences (2-3 sentences max), but make sure to cover the full context. Focus on: understanding their depression, identifying triggers, providing coping strategies, encouraging small positive steps, and guiding them toward recovery. If they try to change topics, gently redirect back to their depression and how you can help. If a user expresses intent of self-harm, immediately encourage them to seek professional help and provide crisis resources."
+        content: "You are a focused depression recovery guide. Your ONLY purpose is to help the user overcome their depression. Stay strictly on topic - only discuss depression, their feelings, recovery strategies, and steps to feel better. Do NOT talk about irrelevant topics. Be warm, compassionate, and understanding. CRITICAL: Your response MUST be EXACTLY 2 sentences maximum - no more, no less. Keep it short, clear, and direct. First sentence: validate their feelings. Second sentence: provide one practical step or encouragement. Do NOT drag on or add extra sentences. If a user expresses intent of self-harm, immediately encourage them to seek professional help and provide crisis resources."
       };
 
       // 4. Call LLM API (OpenAI -> Groq -> fallback)
@@ -248,7 +248,7 @@ export async function registerRoutes(
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [systemMessage, ...messagesForAI],
-        max_tokens: 150, // Keep responses concise (2-3 sentences)
+        max_tokens: 80, // Limit to 2 sentences max (reduced from 150)
         temperature: 0.8, // Slightly higher for more lively, energetic responses
       });
           aiContent = response.choices[0].message.content || "";
@@ -289,7 +289,7 @@ export async function registerRoutes(
               model: "llama-3.1-8b-instant", // Free, fast model (updated from deprecated 70b)
               messages: [systemMessage, ...messagesForAI],
               temperature: 0.8, // Slightly higher for more lively, energetic responses
-              max_tokens: 150, // Reduced to encourage concise, shorter responses (2-3 sentences)
+              max_tokens: 80, // Limit to 2 sentences max (reduced from 150)
             });
             aiContent = response.choices[0].message.content || "";
             console.log("✅ POST /api/messages - Groq response received, length:", aiContent.length);
