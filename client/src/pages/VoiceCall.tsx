@@ -91,68 +91,13 @@ export default function VoiceCall() {
       return;
     }
 
-    // Request microphone permission with echo cancellation (mobile-friendly)
+    // SIMPLIFIED: Don't request getUserMedia separately
+    // Speech recognition will request permission automatically when started
+    // This is what makes chat recording work on mobile - no getUserMedia needed!
     const requestMicrophonePermission = async () => {
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          // Mobile browsers are picky about constraints - use ideal/fallback pattern
-          const constraints: MediaStreamConstraints = {
-            audio: {
-              // Use ideal values with fallbacks for mobile compatibility
-              echoCancellation: { ideal: true },      // Prevents AI voice from being picked up
-              noiseSuppression: { ideal: true },      // Reduces background noise
-              autoGainControl: { ideal: true },       // Automatically boosts quiet speech
-              // Don't specify sampleRate/channelCount on mobile - let browser choose
-              ...(isMobile ? {} : {
-                sampleRate: { ideal: 44100 },
-                channelCount: { ideal: 1 }
-              })
-            }
-          };
-          
-          let stream: MediaStream;
-          try {
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-            console.log("✅ Microphone permission granted with constraints");
-          } catch (constraintError: any) {
-            // Fallback: Try simpler constraints if strict ones fail (common on mobile)
-            console.warn("Strict constraints failed, trying simpler:", constraintError);
-            try {
-              stream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                  echoCancellation: true,
-                  autoGainControl: true
-                }
-              });
-              console.log("✅ Microphone permission granted with fallback constraints");
-            } catch (simpleError: any) {
-              // Last resort: Just request audio
-              console.warn("Fallback constraints failed, using basic audio:", simpleError);
-              stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-              console.log("✅ Microphone permission granted (basic)");
-            }
-          }
-          
-          mediaStreamRef.current = stream;
-          
-          // Log actual constraints applied (for debugging)
-          const audioTracks = stream.getAudioTracks();
-          if (audioTracks.length > 0) {
-            const settings = audioTracks[0].getSettings();
-            console.log("🎤 Actual microphone settings:", {
-              echoCancellation: settings.echoCancellation,
-              noiseSuppression: settings.noiseSuppression,
-              autoGainControl: settings.autoGainControl,
-              sampleRate: settings.sampleRate,
-              isMobile
-            });
-          }
-        }
-      } catch (err: any) {
-        console.error("Microphone permission denied:", err);
-        setCallStatus("Microphone permission required");
-        return;
-      }
+      // Do nothing - let speech recognition handle permission
+      // This matches chat recording behavior exactly
+      console.log("ℹ️ Letting speech recognition handle microphone permission (same as chat)");
     };
 
     const initSpeechRecognition = async () => {
