@@ -286,8 +286,8 @@ export default function VoiceCall() {
                 return;
               }
               
-              // 2. Long cooldown period (5 seconds on mobile)
-              const mobileCooldown = 5000; // 5 seconds
+              // 2. Cooldown period (3 seconds on mobile - reduced for faster response)
+              const mobileCooldown = 3000; // 3 seconds (reduced from 5 for faster response)
               if (timeSinceLastSend < mobileCooldown) {
                 console.log("⚠️ Cooldown period (mobile):", {
                   completeSentence,
@@ -397,7 +397,7 @@ export default function VoiceCall() {
             // Duplicate checks
             const now = Date.now();
             const timeSinceLastSend = now - lastSendTimeRef.current;
-            if (isSendingRef.current || timeSinceLastSend < 5000 || 
+            if (isSendingRef.current || timeSinceLastSend < 3000 || // 3 seconds (reduced from 5)
                 completeSentence === lastSentMessageRef.current ||
                 recentSentMessagesRef.current.includes(trimmedLower)) {
               console.log("⚠️ Duplicate/cooldown (onend, mobile):", completeSentence);
