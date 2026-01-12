@@ -156,47 +156,18 @@ export default function VoiceCall() {
     };
 
     const initSpeechRecognition = async () => {
-      // Request permission first
-      await requestMicrophonePermission();
-
+      // SIMPLIFIED: Match chat recording approach - don't require getUserMedia first
+      // Speech recognition will request permission automatically when started
+      // This is what makes chat recording work on mobile!
+      
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'en-US';
+      // Don't set lang explicitly - let browser use default (works better on mobile)
       
-      // Mobile-specific settings for better speech detection
-      try {
-        (recognitionRef.current as any).maxAlternatives = 1;
-        
-        // Mobile-specific optimizations
-        if (isMobile) {
-          // On mobile, we want to be more sensitive to speech
-          // Some mobile browsers support additional settings
-          try {
-            // Try to set serviceURI if available (some mobile browsers use this)
-            if ((recognitionRef.current as any).serviceURI === undefined) {
-              // Not using service-based recognition
-            }
-          } catch (e) {
-            // Ignore if not supported
-          }
-        }
-      } catch (e) {
-        console.log("Some recognition settings not supported");
-      }
-      
-      console.log("🎤 Speech recognition configured:", {
+      console.log("🎤 Speech recognition configured (same as chat recording):", {
         continuous: recognitionRef.current.continuous,
         interimResults: recognitionRef.current.interimResults,
-        lang: recognitionRef.current.lang,
-        isMobile,
-        userAgent: navigator.userAgent.substring(0, 50)
-      });
-      
-      console.log("🎤 Speech recognition configured:", {
-        continuous: recognitionRef.current.continuous,
-        interimResults: recognitionRef.current.interimResults,
-        lang: recognitionRef.current.lang,
         isMobile
       });
 
@@ -252,185 +223,111 @@ export default function VoiceCall() {
         }
       };
 
+      // SIMPLIFIED: Match chat recording's onresult handler exactly
       recognitionRef.current.onresult = (event: any) => {
-        console.log("🔊 Speech recognition result received:", {
-          resultIndex: event.resultIndex,
-          resultsLength: event.results.length,
-          isMobile: isMobile
-        });
-        
-        let currentTranscript = "";
-        let finalTranscript = "";
-        
-        // Process all results - accumulate both interim and final
+        // Same simple approach as chat recording - works perfectly on mobile!
+        let transcript = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          const transcript = result[0].transcript || "";
-          
-          console.log(`  Result ${i}: "${transcript}" (final: ${result.isFinal})`);
-          
-          if (result.isFinal) {
-            // Final result - this is what we send to AI
-            const final = transcript.trim();
-            if (final) {
-              finalTranscript += final + " "; // Accumulate multiple final results
-              // Stop AI speech immediately when user speaks
-              window.speechSynthesis.cancel();
-            }
-          } else {
-            // Interim result - show in real-time, stop AI
-            currentTranscript += transcript;
-            // Immediately stop AI speech when user starts talking
-            window.speechSynthesis.cancel();
+          transcript += event.results[i][0].transcript;
+        }
+        
+        // Update transcript display (show what's being captured)
+        if (transcript.trim()) {
+          setTranscript(transcript);
+          // Stop AI speech immediately when user speaks
+          window.speechSynthesis.cancel();
+        }
+        
+        // Only send final results (when user finishes speaking)
+        // Check if any result is final
+        let hasFinal = false;
+        let finalTranscript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            hasFinal = true;
+            finalTranscript += event.results[i][0].transcript + " ";
           }
         }
         
-        // Update transcript for real-time display
-        // Show interim results OR final results (so user sees what was captured)
-        const displayTranscript = currentTranscript || finalTranscript.trim();
-        if (displayTranscript) {
-          setTranscript(displayTranscript);
-          console.log("📝 Transcript displayed:", displayTranscript);
-        }
-        
-        // Send final transcript to AI with noise filtering and echo detection
-        if (finalTranscript) {
+        if (hasFinal && finalTranscript.trim()) {
           const trimmed = finalTranscript.trim();
           
-          // ECHO FILTERING: Check if this matches recent AI messages (AI voice being picked up)
+          // ECHO FILTERING: Check if this matches recent AI messages
           const trimmedLower = trimmed.toLowerCase();
           const isEcho = recentAIMessagesRef.current.some(aiMsg => {
-            // Check if user speech matches AI message (likely echo)
             const similarity = calculateSimilarity(trimmedLower, aiMsg);
-            return similarity > 0.6; // 60% similarity = likely echo
+            return similarity > 0.6;
           });
           
           if (isEcho) {
             console.log("🚫 ECHO DETECTED - Ignoring AI voice:", trimmed);
-            setTranscript(""); // Clear immediately
-            return; // Don't send echo to AI
+            setTranscript("");
+            return;
           }
           
-          // Noise filtering for mobile (phone microphones are sensitive)
-          // Require minimum length and word count to filter out small sounds
-          // Reduced thresholds since autoGainControl should help with sensitivity
-          const minLength = isMobile ? 6 : 5; // Further reduced - autoGainControl helps
-          const minWords = isMobile ? 1 : 1; // Reduced to 1 word on mobile (autoGainControl helps)
-          const wordCount = trimmed.split(/\s+/).filter(w => w.length > 0).length;
-          
-          // Check if it's actual speech (has letters, not just noise)
-          const hasLetters = /[a-zA-Z]/.test(trimmed);
-          
-          console.log("🔍 Validating speech:", {
-            trimmed,
-            length: trimmed.length,
-            minLength,
-            wordCount,
-            minWords,
-            hasLetters,
-            isEcho: false
-          });
-          
-          if (trimmed.length >= minLength && wordCount >= minWords && hasLetters) {
-            // Prevent sending duplicate messages (mobile sometimes sends same result multiple times)
+          // Simple validation - same as chat (just check it's not empty)
+          if (trimmed.length >= 2) {
+            // Prevent duplicates
             if (trimmed === lastSentMessageRef.current) {
               console.log("⚠️ Duplicate message ignored:", trimmed);
               return;
             }
             
-            // Debounce: Clear any pending send, then send after short delay
-            // This helps filter out rapid noise triggers
-            if (sendTimeoutRef.current) {
-              clearTimeout(sendTimeoutRef.current);
-            }
+            // Send to AI (no complex debouncing - keep it simple like chat)
+            console.log("✅ Sending to AI:", trimmed);
+            lastSentMessageRef.current = trimmed;
+            sendMessage({ role: "user", content: trimmed });
             
-            sendTimeoutRef.current = setTimeout(() => {
-              console.log("✅ Valid speech detected, sending to AI:", trimmed);
-              lastSentMessageRef.current = trimmed;
-              sendMessage({ role: "user", content: trimmed });
-              // Keep transcript visible for a moment so user can see what was sent
-              setTimeout(() => {
-                setTranscript(""); // Clear after 1.5 seconds
-                lastSentMessageRef.current = ""; // Reset after sending
-              }, 1500);
-            }, isMobile ? 300 : 200); // Slightly longer debounce on mobile
-          } else {
-            console.log("⚠️ Rejected (noise/short):", {
-              reason: trimmed.length < minLength ? "too short" : 
-                      wordCount < minWords ? "not enough words" : 
-                      !hasLetters ? "no letters" : "unknown",
-              trimmed
-            });
-            // Don't clear transcript immediately - let user see what was rejected
+            // Clear transcript after sending
             setTimeout(() => {
-              setTranscript(""); // Clear after 2 seconds if rejected
-            }, 2000);
+              setTranscript("");
+              lastSentMessageRef.current = "";
+            }, 1000);
           }
         }
       };
 
+      // SIMPLIFIED: Match chat recording - simple onend handler
+      // Chat recording doesn't auto-restart, but for call we want continuous
+      // So we auto-restart but keep it simple
       recognitionRef.current.onend = () => {
-        // Auto-restart for continuous listening (works on both mobile and desktop)
-        // This keeps the call connected continuously
+        // Auto-restart for continuous listening (simple approach)
         if (!isMuted && recognitionRef.current) {
-          try {
-            // Small delay before restarting (mobile needs slightly longer)
-            const delay = isMobile ? 300 : 200;
-            setTimeout(() => {
-              if (recognitionRef.current && !isMuted) {
-                try {
-                  recognitionRef.current.start();
-                  console.log("Speech recognition restarted (continuous listening)");
-                  // Keep status as Connected if it was connected
-                  if (callStatus === "Connected" || isListening) {
-                    setCallStatus("Connected");
-                    setIsListening(true);
-                  }
-                } catch (e: any) {
-                  console.log("Could not restart recognition:", e);
-                  // Try again after a longer delay
-                  setTimeout(() => {
-                    if (recognitionRef.current && !isMuted) {
-                      try {
-                        recognitionRef.current.start();
-                        setCallStatus("Connected");
-                        setIsListening(true);
-                        console.log("Speech recognition restarted after retry");
-                      } catch (e2) {
-                        console.error("Failed to restart recognition after retry");
-                        setIsListening(false);
-                        setCallStatus("Tap 'Start Listening' to reconnect");
-                      }
-                    }
-                  }, isMobile ? 1000 : 2000);
-                }
+          // Small delay before restart (same as chat would do if it auto-restarted)
+          setTimeout(() => {
+            if (recognitionRef.current && !isMuted) {
+              try {
+                recognitionRef.current.start();
+                console.log("✅ Recognition restarted (continuous listening)");
+              } catch (e: any) {
+                // If restart fails, that's okay - user can click button
+                console.log("Could not auto-restart:", e.message);
+                setIsListening(false);
+                setCallStatus("Tap 'Start Listening' to reconnect");
               }
-            }, delay);
-          } catch (e) {
-            // Ignore errors if recognition was stopped/aborted
-            console.log("Speech recognition stopped");
-            setIsListening(false);
-          }
+            }
+          }, 500); // Simple delay - same for mobile and desktop
         } else {
           setIsListening(false);
         }
       };
 
-      // Try to auto-start on both mobile and desktop
-      // Mobile browsers may block it, but we try anyway
+      // SIMPLIFIED: Try to auto-start (like chat would if it auto-started)
+      // If it fails on mobile, that's fine - user can click button (same as chat)
       setTimeout(() => {
         if (recognitionRef.current) {
           try {
             recognitionRef.current.start();
             setCallStatus("Connecting...");
-            console.log("Attempting to auto-start recognition");
+            console.log("✅ Auto-starting recognition");
           } catch (e: any) {
-            console.error("Failed to auto-start recognition:", e);
-            // If auto-start fails (common on mobile), show button
+            // Auto-start failed (common on mobile) - show button
+            // This is normal and expected on mobile browsers
+            console.log("Auto-start failed (normal on mobile):", e.message);
             setCallStatus("Tap 'Start Listening' to begin");
           }
         }
-      }, isMobile ? 800 : 500); // Slightly longer delay on mobile
+      }, 500); // Simple delay - same for all devices
     };
 
     // Initialize on mount
@@ -518,43 +415,12 @@ export default function VoiceCall() {
     }
   }, [transcript]);
 
-  // Add manual start button for mobile browsers that require user interaction
+  // SIMPLIFIED: Match chat recording's toggleRecording - simple start/stop
   const handleStartListening = async () => {
-    // Request permission with echo cancellation (mobile-friendly, same as init)
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const constraints: MediaStreamConstraints = {
-          audio: {
-            echoCancellation: { ideal: true },
-            noiseSuppression: { ideal: true },
-            autoGainControl: { ideal: true },
-            ...(isMobile ? {} : {
-              sampleRate: { ideal: 44100 },
-              channelCount: { ideal: 1 }
-            })
-          }
-        };
-        
-        let stream: MediaStream;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia(constraints);
-        } catch (err: any) {
-          // Fallback to simpler constraints
-          console.warn("Strict constraints failed, using fallback:", err);
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              autoGainControl: true
-            }
-          });
-        }
-        
-        mediaStreamRef.current = stream;
-        console.log("✅ Microphone permission granted");
-      }
-    } catch (err) {
-      console.error("Microphone permission denied:", err);
-      setCallStatus("Microphone permission required - check browser settings");
+    // Same simple approach as chat recording - just start recognition
+    // Speech recognition will request permission automatically
+    if (!recognitionRef.current) {
+      setCallStatus("Speech recognition not initialized");
       return;
     }
 
