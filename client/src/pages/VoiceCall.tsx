@@ -35,10 +35,12 @@ export default function VoiceCall() {
   const lastReadMessageId = useRef<number | null>(null);
   const hasInitialized = useRef(false);
   const lastSentMessageRef = useRef<string>(""); // Prevent duplicate sends
-  const sendTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce sending
+  const sendTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Wait for complete sentences
   const audioContextRef = useRef<AudioContext | null>(null); // Web Audio API for gain boost
   const mediaStreamRef = useRef<MediaStream | null>(null); // Keep mic stream active
   const recentAIMessagesRef = useRef<string[]>([]); // Track recent AI messages to filter echo
+  const lastAISpeakTimeRef = useRef<number>(0); // Track when AI last spoke (for echo filtering)
+  const pendingTranscriptRef = useRef<string>(""); // Accumulate transcript before sending
 
   // Detect device/browser type
   const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -168,67 +170,102 @@ export default function VoiceCall() {
         }
       };
 
-      // SIMPLIFIED: Match chat recording's onresult handler exactly
+      // REAL-TIME: Improved handler with echo filtering, complete sentence detection, and instant sending
       recognitionRef.current.onresult = (event: any) => {
-        // Same simple approach as chat recording - works perfectly on mobile!
-        let transcript = "";
+        let interimTranscript = "";
+        let finalTranscript = "";
+        
+        // Process all results
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+          const result = event.results[i];
+          const transcript = result[0].transcript || "";
+          
+          if (result.isFinal) {
+            // Final result - accumulate for complete sentence
+            finalTranscript += transcript + " ";
+          } else {
+            // Interim result - show in real-time
+            interimTranscript += transcript;
+          }
         }
         
-        // Update transcript display (show what's being captured)
-        if (transcript.trim()) {
-          setTranscript(transcript);
+        // Update transcript display (show interim + accumulated final)
+        const displayText = (pendingTranscriptRef.current + finalTranscript + interimTranscript).trim();
+        if (displayText) {
+          setTranscript(displayText);
           // Stop AI speech immediately when user speaks
           window.speechSynthesis.cancel();
         }
         
-        // Only send final results (when user finishes speaking)
-        // Check if any result is final
-        let hasFinal = false;
-        let finalTranscript = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            hasFinal = true;
-            finalTranscript += event.results[i][0].transcript + " ";
-          }
-        }
-        
-        if (hasFinal && finalTranscript.trim()) {
-          const trimmed = finalTranscript.trim();
+        // When we get final results, accumulate them
+        if (finalTranscript.trim()) {
+          pendingTranscriptRef.current += finalTranscript;
           
-          // ECHO FILTERING: Check if this matches recent AI messages
-          const trimmedLower = trimmed.toLowerCase();
-          const isEcho = recentAIMessagesRef.current.some(aiMsg => {
-            const similarity = calculateSimilarity(trimmedLower, aiMsg);
-            return similarity > 0.6;
-          });
-          
-          if (isEcho) {
-            console.log("🚫 ECHO DETECTED - Ignoring AI voice:", trimmed);
-            setTranscript("");
-            return;
+          // Clear any existing timeout
+          if (sendTimeoutRef.current) {
+            clearTimeout(sendTimeoutRef.current);
           }
           
-          // Simple validation - same as chat (just check it's not empty)
-          if (trimmed.length >= 2) {
-            // Prevent duplicates
-            if (trimmed === lastSentMessageRef.current) {
-              console.log("⚠️ Duplicate message ignored:", trimmed);
+          // Wait a short time (500ms) to see if more speech comes
+          // This ensures we get complete sentences, not half sentences
+          sendTimeoutRef.current = setTimeout(() => {
+            const completeSentence = pendingTranscriptRef.current.trim();
+            pendingTranscriptRef.current = ""; // Clear accumulated
+            
+            if (!completeSentence || completeSentence.length < 2) {
               return;
             }
             
-            // Send to AI (no complex debouncing - keep it simple like chat)
-            console.log("✅ Sending to AI:", trimmed);
-            lastSentMessageRef.current = trimmed;
-            sendMessage({ role: "user", content: trimmed });
+            // IMPROVED ECHO FILTERING:
+            // 1. Check if speech happened within 3 seconds of AI speaking (likely echo)
+            const timeSinceAISpoke = Date.now() - lastAISpeakTimeRef.current;
+            const isRecentEcho = timeSinceAISpoke < 3000; // 3 seconds
+            
+            // 2. Check similarity to AI messages
+            const trimmedLower = completeSentence.toLowerCase();
+            const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
+              const similarity = calculateSimilarity(trimmedLower, aiMsg);
+              return similarity > 0.5; // Lower threshold (50%) to catch more echoes
+            });
+            
+            if (isRecentEcho && isSimilarEcho) {
+              console.log("🚫 ECHO DETECTED (time + similarity):", completeSentence);
+              setTranscript("");
+              return;
+            }
+            
+            // 3. Additional check: If it's very similar and happened right after AI spoke
+            if (isRecentEcho) {
+              // Even if similarity is lower, if it's very recent, be cautious
+              const hasCommonWords = recentAIMessagesRef.current.some(aiMsg => {
+                const userWords = trimmedLower.split(/\s+/).filter(w => w.length > 3);
+                const aiWords = aiMsg.split(/\s+/).filter(w => w.length > 3);
+                const commonWords = userWords.filter(w => aiWords.includes(w));
+                return commonWords.length >= 2; // At least 2 common words
+              });
+              
+              if (hasCommonWords) {
+                console.log("🚫 ECHO DETECTED (recent + common words):", completeSentence);
+                setTranscript("");
+                return;
+              }
+            }
+            
+            // Prevent duplicates
+            if (completeSentence === lastSentMessageRef.current) {
+              console.log("⚠️ Duplicate message ignored:", completeSentence);
+              setTranscript("");
+              return;
+            }
+            
+            // Send immediately (REAL-TIME - no delays)
+            console.log("✅ Sending to AI (real-time):", completeSentence);
+            lastSentMessageRef.current = completeSentence;
+            sendMessage({ role: "user", content: completeSentence });
             
             // Clear transcript after sending
-            setTimeout(() => {
-              setTranscript("");
-              lastSentMessageRef.current = "";
-            }, 1000);
-          }
+            setTranscript("");
+          }, 500); // Wait 500ms for more speech to complete the sentence
         }
       };
 
@@ -315,11 +352,14 @@ export default function VoiceCall() {
 
     const lastMessage = messages[messages.length - 1];
     if (lastMessage && lastMessage.role === "assistant" && lastMessage.id !== lastReadMessageId.current) {
-      // Store AI message to filter echo (keep last 3 AI messages)
+      // Store AI message to filter echo (keep last 5 AI messages for better filtering)
       recentAIMessagesRef.current.push(lastMessage.content.toLowerCase());
-      if (recentAIMessagesRef.current.length > 3) {
-        recentAIMessagesRef.current.shift(); // Keep only last 3
+      if (recentAIMessagesRef.current.length > 5) {
+        recentAIMessagesRef.current.shift(); // Keep only last 5
       }
+      
+      // Track when AI starts speaking (for echo filtering)
+      lastAISpeakTimeRef.current = Date.now();
       
       // Wait for voices to be loaded, then speak
       const cleanup = waitForVoices(() => {
@@ -331,15 +371,16 @@ export default function VoiceCall() {
         
         // Add event handlers for better control
         utterance.onstart = () => {
-          // Speech started - recognition continues running (continuous mode)
+          // Speech started - record time for echo filtering
+          lastAISpeakTimeRef.current = Date.now();
         };
         
         utterance.onend = () => {
-          // Speech ended naturally - recognition still running
+          // Speech ended - keep time for echo filtering (3 second window)
         };
         
         utterance.onerror = () => {
-          // Speech was interrupted or errored - recognition still running
+          // Speech was interrupted or errored
         };
         
         // Start speaking
