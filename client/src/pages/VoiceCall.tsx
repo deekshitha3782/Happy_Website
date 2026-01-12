@@ -193,6 +193,13 @@ export default function VoiceCall() {
           }
         }
         
+        // MOBILE: Block ALL results if AI is speaking (extra safety)
+        if (isMobile && isAISpeakingRef.current) {
+          console.log("🚫 BLOCKED: Ignoring all results - AI is speaking (mobile)");
+          setTranscript("");
+          return; // Don't process any results while AI is speaking
+        }
+        
         // Update transcript display (show interim + accumulated final)
         const displayText = (pendingTranscriptRef.current + finalTranscript + interimTranscript).trim();
         if (displayText) {
@@ -535,12 +542,46 @@ export default function VoiceCall() {
         
         // Add event handlers for better control
         utterance.onstart = () => {
-          // Speech started - record time for echo filtering
+          // Speech started - record time and set flag
           lastAISpeakTimeRef.current = Date.now();
+          isAISpeakingRef.current = true;
+          
+          // MOBILE: Actually STOP recognition when AI starts speaking (most aggressive)
+          if (isMobile && recognitionRef.current && isListening) {
+            try {
+              recognitionRef.current.stop();
+              console.log("🛑 STOPPED recognition - AI is speaking (mobile)");
+              setIsListening(false);
+            } catch (e) {
+              console.log("Could not stop recognition:", e);
+            }
+          }
+          
+          console.log("🔊 AI started speaking");
         };
         
         utterance.onend = () => {
-          // Speech ended - keep time for echo filtering (3 second window)
+          // Speech ended
+          isAISpeakingRef.current = false;
+          lastAISpeakTimeRef.current = Date.now(); // Update time
+          
+          // MOBILE: Restart recognition after AI finishes (with delay to prevent echo)
+          if (isMobile && recognitionRef.current && !isMuted) {
+            setTimeout(() => {
+              if (recognitionRef.current && !isMuted) {
+                try {
+                  recognitionRef.current.start();
+                  setIsListening(true);
+                  console.log("✅ RESTARTED recognition after AI finished (mobile)");
+                } catch (e) {
+                  console.log("Could not restart recognition:", e);
+                  setCallStatus("Tap 'Start Listening' to reconnect");
+                }
+              }
+            }, 2000); // 2 second delay after AI finishes (prevents echo)
+          }
+          
+          console.log("🔇 AI finished speaking");
         };
         
         utterance.onerror = () => {
