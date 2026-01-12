@@ -41,8 +41,10 @@ export default function VoiceCall() {
   const mediaStreamRef = useRef<MediaStream | null>(null); // Keep mic stream active
   const recentAIMessagesRef = useRef<string[]>([]); // Track recent AI messages to filter echo
   const lastAISpeakTimeRef = useRef<number>(0); // Track when AI last spoke (for echo filtering)
+  const isAISpeakingRef = useRef<boolean>(false); // Track if AI is currently speaking (MOBILE: block all speech)
   const pendingTranscriptRef = useRef<string>(""); // Accumulate transcript before sending
   const lastSendTimeRef = useRef<number>(0); // Track when last message was sent (cooldown for duplicates)
+  const isSendingRef = useRef<boolean>(false); // Prevent multiple simultaneous sends (mobile sends duplicates)
 
   // Detect device/browser type
   const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -218,95 +220,144 @@ export default function VoiceCall() {
               return;
             }
             
-            // AGGRESSIVE ECHO FILTERING (especially for mobile):
+            // ULTRA-AGGRESSIVE ECHO FILTERING FOR MOBILE (like laptop):
             const trimmedLower = completeSentence.toLowerCase();
             const timeSinceAISpoke = Date.now() - lastAISpeakTimeRef.current;
             
-            // Mobile needs stricter filtering - phones pick up AI voice more easily
-            const echoTimeWindow = isMobile ? 5000 : 3000; // 5 seconds on mobile, 3 on desktop
-            const similarityThreshold = isMobile ? 0.3 : 0.5; // 30% on mobile, 50% on desktop
-            const commonWordsThreshold = isMobile ? 1 : 2; // 1 word on mobile, 2 on desktop
-            
-            // 1. Time-based check: Speech within echo window after AI spoke
-            const isRecentEcho = timeSinceAISpoke < echoTimeWindow;
-            
-            // 2. Similarity check: Compare to all recent AI messages
-            const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
-              const similarity = calculateSimilarity(trimmedLower, aiMsg);
-              return similarity > similarityThreshold;
-            });
-            
-            // 3. Common words check: If recent and has common words with AI
-            let hasCommonWords = false;
-            if (isRecentEcho) {
-              hasCommonWords = recentAIMessagesRef.current.some(aiMsg => {
-                const userWords = trimmedLower.split(/\s+/).filter(w => w.length > 2);
-                const aiWords = aiMsg.split(/\s+/).filter(w => w.length > 2);
-                const commonWords = userWords.filter(w => aiWords.includes(w));
-                return commonWords.length >= commonWordsThreshold;
+            // MOBILE: Block ALL speech when AI is speaking or just finished (like laptop)
+            if (isMobile) {
+              // 1. Block if AI is currently speaking (most important)
+              if (isAISpeakingRef.current) {
+                console.log("🚫 BLOCKED: AI is currently speaking (mobile)", completeSentence);
+                setTranscript("");
+                return;
+              }
+              
+              // 2. Block ALL speech within 8 seconds after AI spoke (very strict)
+              const mobileEchoWindow = 8000; // 8 seconds on mobile
+              if (timeSinceAISpoke < mobileEchoWindow) {
+                console.log("🚫 BLOCKED: Speech too soon after AI (mobile)", {
+                  completeSentence,
+                  timeSinceAISpoke,
+                  window: mobileEchoWindow
+                });
+                setTranscript("");
+                return;
+              }
+              
+              // 3. Even after window, check similarity (very strict)
+              const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
+                const similarity = calculateSimilarity(trimmedLower, aiMsg);
+                return similarity > 0.2; // 20% similarity = reject (very strict)
               });
+              
+              if (isSimilarEcho) {
+                console.log("🚫 BLOCKED: Similar to AI message (mobile)", completeSentence);
+                setTranscript("");
+                return;
+              }
+            } else {
+              // DESKTOP: Normal filtering (works fine)
+              const echoTimeWindow = 3000;
+              const similarityThreshold = 0.5;
+              const isRecentEcho = timeSinceAISpoke < echoTimeWindow;
+              const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
+                const similarity = calculateSimilarity(trimmedLower, aiMsg);
+                return similarity > similarityThreshold;
+              });
+              
+              if (isRecentEcho && isSimilarEcho) {
+                console.log("🚫 ECHO DETECTED (desktop):", completeSentence);
+                setTranscript("");
+                return;
+              }
             }
             
-            // REJECT if ANY echo indicator is true (more aggressive on mobile)
-            if (isRecentEcho && (isSimilarEcho || hasCommonWords)) {
-              console.log("🚫 ECHO DETECTED (mobile-optimized):", {
-                completeSentence,
-                timeSinceAISpoke,
-                isSimilarEcho,
-                hasCommonWords,
-                isMobile
-              });
-              setTranscript("");
-              return;
-            }
-            
-            // IMPROVED DUPLICATE DETECTION (especially for mobile):
+            // ULTRA-STRICT DUPLICATE DETECTION FOR MOBILE (prevent 3-4x sends):
             const now = Date.now();
             const timeSinceLastSend = now - lastSendTimeRef.current;
-            const cooldownPeriod = isMobile ? 2000 : 1000; // 2 seconds on mobile, 1 on desktop
             
-            // 1. Exact duplicate check
-            if (completeSentence === lastSentMessageRef.current) {
-              console.log("⚠️ Exact duplicate ignored:", completeSentence);
-              setTranscript("");
-              return;
-            }
-            
-            // 2. Similar duplicate check (mobile sends same thing with slight variations)
-            const isSimilarDuplicate = recentSentMessagesRef.current.some(sentMsg => {
-              const similarity = calculateSimilarity(trimmedLower, sentMsg.toLowerCase());
-              return similarity > 0.8; // 80% similar = likely duplicate
-            });
-            
-            if (isSimilarDuplicate) {
-              console.log("⚠️ Similar duplicate ignored:", completeSentence);
-              setTranscript("");
-              return;
-            }
-            
-            // 3. Cooldown check: Don't send if sent recently (mobile sends multiple times)
-            if (timeSinceLastSend < cooldownPeriod) {
-              console.log("⚠️ Cooldown period - message ignored:", {
-                completeSentence,
-                timeSinceLastSend,
-                cooldownPeriod
+            // MOBILE: Much stricter duplicate prevention
+            if (isMobile) {
+              // 1. Prevent simultaneous sends (mobile sends same result multiple times)
+              if (isSendingRef.current) {
+                console.log("⚠️ Already sending - ignoring duplicate:", completeSentence);
+                setTranscript("");
+                return;
+              }
+              
+              // 2. Long cooldown period (5 seconds on mobile)
+              const mobileCooldown = 5000; // 5 seconds
+              if (timeSinceLastSend < mobileCooldown) {
+                console.log("⚠️ Cooldown period (mobile):", {
+                  completeSentence,
+                  timeSinceLastSend,
+                  cooldown: mobileCooldown
+                });
+                setTranscript("");
+                return;
+              }
+              
+              // 3. Exact duplicate check
+              if (completeSentence === lastSentMessageRef.current) {
+                console.log("⚠️ Exact duplicate (mobile):", completeSentence);
+                setTranscript("");
+                return;
+              }
+              
+              // 4. Similar duplicate check (70% threshold - stricter)
+              const isSimilarDuplicate = recentSentMessagesRef.current.some(sentMsg => {
+                const similarity = calculateSimilarity(trimmedLower, sentMsg.toLowerCase());
+                return similarity > 0.7; // 70% similar = reject
               });
-              setTranscript("");
-              return;
+              
+              if (isSimilarDuplicate) {
+                console.log("⚠️ Similar duplicate (mobile):", completeSentence);
+                setTranscript("");
+                return;
+              }
+              
+              // 5. Check if same sentence was sent in last 10 seconds (mobile sends 3-4x)
+              const recentDuplicate = recentSentMessagesRef.current.some(sentMsg => {
+                return sentMsg === trimmedLower;
+              });
+              
+              if (recentDuplicate) {
+                console.log("⚠️ Recent duplicate found (mobile):", completeSentence);
+                setTranscript("");
+                return;
+              }
+            } else {
+              // DESKTOP: Normal duplicate detection (works fine)
+              const cooldownPeriod = 1000;
+              if (completeSentence === lastSentMessageRef.current || timeSinceLastSend < cooldownPeriod) {
+                console.log("⚠️ Duplicate ignored (desktop):", completeSentence);
+                setTranscript("");
+                return;
+              }
             }
             
             // Send immediately (REAL-TIME - no delays)
             console.log("✅ Sending to AI (real-time):", completeSentence);
+            isSendingRef.current = true; // Set flag to prevent duplicates
             lastSentMessageRef.current = completeSentence;
-            lastSendTimeRef.current = Date.now();
+            lastSendTimeRef.current = now;
             
-            // Track recent sent messages (keep last 5 for duplicate detection)
+            // Track recent sent messages (keep last 10 for mobile, 5 for desktop)
             recentSentMessagesRef.current.push(completeSentence.toLowerCase());
-            if (recentSentMessagesRef.current.length > 5) {
+            const maxRecent = isMobile ? 10 : 5;
+            if (recentSentMessagesRef.current.length > maxRecent) {
               recentSentMessagesRef.current.shift();
             }
             
-            sendMessage({ role: "user", content: completeSentence });
+            sendMessage({ role: "user", content: completeSentence }, {
+              onSuccess: () => {
+                isSendingRef.current = false; // Clear flag after success
+              },
+              onError: () => {
+                isSendingRef.current = false; // Clear flag on error
+              }
+            });
             
             // Clear transcript after sending
             setTranscript("");
