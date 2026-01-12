@@ -231,10 +231,22 @@ export async function registerRoutes(
         content: m.content
       }));
 
-      // 3. System prompt for focused depression recovery guide - MAX 2 SENTENCES
+      // 3. System prompt - MAX 2 SENTENCES, MAX 10 SECONDS, SAFETY CHECKS
+      // Check if this is initial greeting
+      const isInitialGreeting = history.length === 0 && (userMessage.toLowerCase() === "start" || userMessage.toLowerCase().includes("hi"));
+      
+      let systemContent = "";
+      if (isInitialGreeting) {
+        // Initial greeting - just say hi
+        systemContent = "You are a helpful and compassionate assistant. The user just started a conversation. Respond with EXACTLY this greeting and nothing else: 'Hi, how may I help you?' Do not add anything else, no questions, no extra words. Just that greeting.";
+      } else {
+        // Normal conversation - respond naturally but safely
+        systemContent = "You are a helpful and compassionate assistant. Respond naturally to the user's requests. You can tell jokes, have conversations, and help with various topics. CRITICAL SAFETY RULES: 1) NEVER provide methods, examples, or instructions on how to die, self-harm, or commit suicide. 2) If user asks about self-harm, immediately encourage professional help and provide crisis resources. 3) Keep responses to MAXIMUM 2 sentences - be concise and clear. 4) Responses should take less than 10 seconds to speak. Be warm, friendly, and helpful while maintaining safety.";
+      }
+      
       const systemMessage = {
         role: "system" as const,
-        content: "You are a focused depression recovery guide. Your ONLY purpose is to help the user overcome their depression. Stay strictly on topic - only discuss depression, their feelings, recovery strategies, and steps to feel better. Do NOT talk about irrelevant topics. Be warm, compassionate, and understanding. CRITICAL: Your response MUST be EXACTLY 2 sentences maximum - no more, no less. Keep it short, clear, and direct. First sentence: validate their feelings. Second sentence: provide one practical step or encouragement. Do NOT drag on or add extra sentences. If a user expresses intent of self-harm, immediately encourage them to seek professional help and provide crisis resources."
+        content: systemContent
       };
 
       // 4. Call LLM API (OpenAI -> Groq -> fallback)

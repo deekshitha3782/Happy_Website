@@ -51,28 +51,28 @@ export default function VoiceCall() {
     // Stop any ongoing speech from chat immediately
     window.speechSynthesis.cancel();
     
-    // Clear chat and send greeting on first mount
-    if (!hasInitialized.current) {
-      hasInitialized.current = true;
-      
-      // Clear existing messages first
-      clearChat(undefined, {
-        onSuccess: () => {
-          // After clearing, send a greeting trigger to start fresh conversation
-          // The AI will respond with a warm greeting
-          setTimeout(() => {
-            sendMessage(
-              { role: "user", content: "Hi, I'd like to talk" },
-              {
-                onSuccess: () => {
-                  // The AI will generate a greeting response asking what's the issue
-                },
-              }
-            );
-          }, 800); // Delay to ensure chat is fully cleared
-        },
-      });
-    }
+      // Clear chat and send greeting on first mount
+      if (!hasInitialized.current) {
+        hasInitialized.current = true;
+        
+        // Clear existing messages first
+        clearChat(undefined, {
+          onSuccess: () => {
+            // After clearing, send initial greeting message directly
+            // AI will respond with simple greeting
+            setTimeout(() => {
+              sendMessage(
+                { role: "user", content: "start" },
+                {
+                  onSuccess: () => {
+                    // The AI will generate the initial greeting
+                  },
+                }
+              );
+            }, 800); // Delay to ensure chat is fully cleared
+          },
+        });
+      }
   }, [clearChat, sendMessage]);
 
   // Initialize Speech Recognition with mobile support
@@ -211,15 +211,36 @@ export default function VoiceCall() {
         if (finalTranscript.trim()) {
           const trimmed = finalTranscript.trim();
           
-          // MOBILE FIX: Ensure complete sentence (ends with punctuation or is long enough)
-          // Mobile browsers sometimes mark short phrases as "final" too quickly
+          // MOBILE FIX: Wait for complete sentence with natural pause
+          // Mobile browsers mark "final" too quickly - need stricter validation
           const hasPunctuation = /[.!?]$/.test(trimmed);
-          const isLongEnough = trimmed.length >= (isMobile ? 10 : 5); // Longer threshold on mobile
-          const isCompleteSentence = hasPunctuation || isLongEnough;
+          const hasNaturalPause = trimmed.length >= (isMobile ? 15 : 8); // Longer threshold on mobile
+          const endsWithWord = /\w+$/.test(trimmed); // Ends with a complete word
           
-          if (!isCompleteSentence && isMobile) {
-            console.log("⏳ Waiting for complete sentence on mobile:", trimmed);
-            // Don't send yet - wait for more
+          // On mobile, require BOTH punctuation AND sufficient length OR very long phrase
+          const isCompleteSentence = isMobile 
+            ? (hasPunctuation && hasNaturalPause) || trimmed.length >= 25
+            : hasPunctuation || hasNaturalPause;
+          
+          if (!isCompleteSentence) {
+            console.log(`⏳ Waiting for complete sentence ${isMobile ? '(mobile)' : '(desktop)'}:`, trimmed, {
+              hasPunctuation,
+              hasNaturalPause,
+              length: trimmed.length,
+              endsWithWord
+            });
+            // Don't send yet - wait for more input
+            // On mobile, wait a bit longer to see if more comes
+            if (isMobile) {
+              // Wait 1 second to see if more speech comes
+              setTimeout(() => {
+                // If no new final results came, send what we have if it's reasonable
+                if (trimmed.length >= 10) {
+                  console.log("✅ Mobile: Sending after wait period:", trimmed);
+                  // Will be processed in next onresult if user continues, or send now
+                }
+              }, 1000);
+            }
             return;
           }
           
