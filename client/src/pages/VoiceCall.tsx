@@ -373,53 +373,68 @@ export default function VoiceCall() {
           const completeSentence = pendingTranscriptRef.current.trim();
           pendingTranscriptRef.current = "";
           
-          // Apply same aggressive echo filtering (mobile-optimized)
+          // Apply same ultra-strict filtering (mobile-optimized)
           const trimmedLower = completeSentence.toLowerCase();
           const timeSinceAISpoke = Date.now() - lastAISpeakTimeRef.current;
-          const echoTimeWindow = isMobile ? 5000 : 3000;
-          const similarityThreshold = isMobile ? 0.3 : 0.5;
-          const commonWordsThreshold = isMobile ? 1 : 2;
           
-          const isRecentEcho = timeSinceAISpoke < echoTimeWindow;
-          const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
-            const similarity = calculateSimilarity(trimmedLower, aiMsg);
-            return similarity > similarityThreshold;
-          });
-          
-          let hasCommonWords = false;
-          if (isRecentEcho) {
-            hasCommonWords = recentAIMessagesRef.current.some(aiMsg => {
-              const userWords = trimmedLower.split(/\s+/).filter(w => w.length > 2);
-              const aiWords = aiMsg.split(/\s+/).filter(w => w.length > 2);
-              const commonWords = userWords.filter(w => aiWords.includes(w));
-              return commonWords.length >= commonWordsThreshold;
+          // MOBILE: Same strict blocking as main handler
+          if (isMobile) {
+            if (isAISpeakingRef.current || timeSinceAISpoke < 8000) {
+              console.log("🚫 BLOCKED (onend, mobile):", completeSentence);
+              return;
+            }
+            
+            const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
+              const similarity = calculateSimilarity(trimmedLower, aiMsg);
+              return similarity > 0.2;
             });
+            
+            if (isSimilarEcho) {
+              console.log("🚫 BLOCKED: Similar to AI (onend, mobile):", completeSentence);
+              return;
+            }
+            
+            // Duplicate checks
+            const now = Date.now();
+            const timeSinceLastSend = now - lastSendTimeRef.current;
+            if (isSendingRef.current || timeSinceLastSend < 5000 || 
+                completeSentence === lastSentMessageRef.current ||
+                recentSentMessagesRef.current.includes(trimmedLower)) {
+              console.log("⚠️ Duplicate/cooldown (onend, mobile):", completeSentence);
+              return;
+            }
+          } else {
+            // DESKTOP: Normal checks
+            const isRecentEcho = timeSinceAISpoke < 3000;
+            const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
+              const similarity = calculateSimilarity(trimmedLower, aiMsg);
+              return similarity > 0.5;
+            });
+            
+            const now = Date.now();
+            const timeSinceLastSend = now - lastSendTimeRef.current;
+            if ((isRecentEcho && isSimilarEcho) || 
+                completeSentence === lastSentMessageRef.current || 
+                timeSinceLastSend < 1000) {
+              return;
+            }
           }
           
-          // Check duplicates
-          const now = Date.now();
-          const timeSinceLastSend = now - lastSendTimeRef.current;
-          const cooldownPeriod = isMobile ? 2000 : 1000;
-          const isExactDuplicate = completeSentence === lastSentMessageRef.current;
-          const isSimilarDuplicate = recentSentMessagesRef.current.some(sentMsg => {
-            const similarity = calculateSimilarity(trimmedLower, sentMsg.toLowerCase());
-            return similarity > 0.8;
-          });
-          
-          // Only send if passes all checks
-          if (!(isRecentEcho && (isSimilarEcho || hasCommonWords)) && 
-              !isExactDuplicate && 
-              !isSimilarDuplicate && 
-              timeSinceLastSend >= cooldownPeriod && 
-              completeSentence.length >= 2) {
+          // Send if passes all checks
+          if (completeSentence.length >= 2) {
             console.log("✅ Sending final sentence (onend):", completeSentence);
+            isSendingRef.current = true;
             lastSentMessageRef.current = completeSentence;
-            lastSendTimeRef.current = now;
+            lastSendTimeRef.current = Date.now();
             recentSentMessagesRef.current.push(trimmedLower);
-            if (recentSentMessagesRef.current.length > 5) {
+            const maxRecent = isMobile ? 10 : 5;
+            if (recentSentMessagesRef.current.length > maxRecent) {
               recentSentMessagesRef.current.shift();
             }
-            sendMessage({ role: "user", content: completeSentence });
+            sendMessage({ role: "user", content: completeSentence }, {
+              onSuccess: () => { isSendingRef.current = false; },
+              onError: () => { isSendingRef.current = false; }
+            });
             setTranscript("");
           }
         }
