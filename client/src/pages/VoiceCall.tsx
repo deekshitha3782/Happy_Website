@@ -39,6 +39,7 @@ export default function VoiceCall() {
   const audioContextRef = useRef<AudioContext | null>(null); // Web Audio API for gain boost
   const mediaStreamRef = useRef<MediaStream | null>(null); // Keep mic stream active
   const recentAIMessagesRef = useRef<string[]>([]); // Track recent AI messages to filter echo
+  const isAISpeakingRef = useRef<boolean>(false); // Track if AI is currently speaking
 
   // Detect device/browser type
   const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -168,8 +169,14 @@ export default function VoiceCall() {
         }
       };
 
-      // FIXED: Only send final results - wait for complete sentence (especially on mobile)
+      // FIXED: Only send final results - wait for COMPLETE sentence (especially on mobile)
       recognitionRef.current.onresult = (event: any) => {
+        // Don't process results if AI is speaking
+        if (isAISpeakingRef.current) {
+          console.log("🔇 Ignoring recognition results - AI is speaking");
+          return;
+        }
+        
         let interimTranscript = "";
         let finalTranscript = "";
         
@@ -197,11 +204,24 @@ export default function VoiceCall() {
         // Stop AI speech immediately when user speaks (even interim)
         if (interimTranscript.trim() || finalTranscript.trim()) {
           window.speechSynthesis.cancel();
+          isAISpeakingRef.current = false; // User interrupted AI
         }
         
-        // ONLY send final results - wait for complete sentence (works on mobile and desktop)
+        // ONLY send final results - wait for COMPLETE sentence (especially on mobile)
         if (finalTranscript.trim()) {
           const trimmed = finalTranscript.trim();
+          
+          // MOBILE FIX: Ensure complete sentence (ends with punctuation or is long enough)
+          // Mobile browsers sometimes mark short phrases as "final" too quickly
+          const hasPunctuation = /[.!?]$/.test(trimmed);
+          const isLongEnough = trimmed.length >= (isMobile ? 10 : 5); // Longer threshold on mobile
+          const isCompleteSentence = hasPunctuation || isLongEnough;
+          
+          if (!isCompleteSentence && isMobile) {
+            console.log("⏳ Waiting for complete sentence on mobile:", trimmed);
+            // Don't send yet - wait for more
+            return;
+          }
           
           // ECHO FILTERING: Check if this matches recent AI messages
           const trimmedLower = trimmed.toLowerCase();
@@ -225,7 +245,7 @@ export default function VoiceCall() {
             }
             
             // Send to AI - only final results (complete sentences)
-            console.log("✅ Sending final result to AI:", trimmed);
+            console.log("✅ Sending complete sentence to AI:", trimmed);
             lastSentMessageRef.current = trimmed;
             sendMessage({ role: "user", content: trimmed });
             
@@ -238,26 +258,30 @@ export default function VoiceCall() {
         }
       };
 
-      // SIMPLIFIED: Match chat recording - simple onend handler
-      // Chat recording doesn't auto-restart, but for call we want continuous
-      // So we auto-restart but keep it simple
+      // Auto-restart handler - BUT DON'T RESTART IF AI IS SPEAKING
       recognitionRef.current.onend = () => {
-        // Auto-restart for continuous listening (simple approach)
-        if (!isMuted && recognitionRef.current) {
-          // Small delay before restart (same as chat would do if it auto-restarted)
+        // DON'T restart if AI is speaking or if muted
+        if (isAISpeakingRef.current) {
+          console.log("🔇 Recognition ended but AI is speaking - NOT restarting");
+          setIsListening(false);
+          return;
+        }
+        
+        // Auto-restart for continuous listening (only if AI is not speaking)
+        if (!isMuted && recognitionRef.current && !isAISpeakingRef.current) {
           setTimeout(() => {
-            if (recognitionRef.current && !isMuted) {
+            if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
               try {
                 recognitionRef.current.start();
+                setIsListening(true);
                 console.log("✅ Recognition restarted (continuous listening)");
               } catch (e: any) {
-                // If restart fails, that's okay - user can click button
                 console.log("Could not auto-restart:", e.message);
                 setIsListening(false);
                 setCallStatus("Tap 'Start Listening' to reconnect");
               }
             }
-          }, 500); // Simple delay - same for mobile and desktop
+          }, 500);
         } else {
           setIsListening(false);
         }
@@ -335,10 +359,12 @@ export default function VoiceCall() {
         // Cancel any ongoing speech before starting new one
         window.speechSynthesis.cancel();
         
-        // TURN MIC OFF when AI starts speaking
-        if (recognitionRef.current && isListening) {
+        // TURN MIC OFF when AI starts speaking - FORCE STOP
+        isAISpeakingRef.current = true; // Mark AI as speaking
+        if (recognitionRef.current) {
           try {
             recognitionRef.current.stop();
+            recognitionRef.current.abort(); // Force stop
             setIsListening(false);
             console.log("🔇 Mic turned off - AI is speaking");
           } catch (e) {
@@ -348,37 +374,53 @@ export default function VoiceCall() {
         
         // Add event handlers for better control
         utterance.onstart = () => {
-          // Speech started - mic is off
+          // Speech started - ensure mic is off
+          isAISpeakingRef.current = true;
+          if (recognitionRef.current && isListening) {
+            try {
+              recognitionRef.current.stop();
+              recognitionRef.current.abort();
+              setIsListening(false);
+            } catch (e) {
+              // Ignore errors
+            }
+          }
         };
         
         utterance.onend = () => {
           // Speech ended - TURN MIC BACK ON
+          isAISpeakingRef.current = false; // Mark AI as finished
           if (recognitionRef.current && !isMuted) {
             setTimeout(() => {
-              try {
-                recognitionRef.current.start();
-                setIsListening(true);
-                console.log("🎤 Mic turned back on - AI finished speaking");
-              } catch (e: any) {
-                console.log("Could not restart recognition:", e.message);
-                setCallStatus("Tap 'Start Listening' to reconnect");
+              if (!isAISpeakingRef.current && recognitionRef.current && !isMuted) {
+                try {
+                  recognitionRef.current.start();
+                  setIsListening(true);
+                  console.log("🎤 Mic turned back on - AI finished speaking");
+                } catch (e: any) {
+                  console.log("Could not restart recognition:", e.message);
+                  setCallStatus("Tap 'Start Listening' to reconnect");
+                }
               }
-            }, 300); // Small delay before restarting
+            }, 500); // Delay before restarting
           }
         };
         
         utterance.onerror = () => {
           // Speech was interrupted - TURN MIC BACK ON
+          isAISpeakingRef.current = false; // Mark AI as finished
           if (recognitionRef.current && !isMuted) {
             setTimeout(() => {
-              try {
-                recognitionRef.current.start();
-                setIsListening(true);
-                console.log("🎤 Mic turned back on - AI speech interrupted");
-              } catch (e: any) {
-                console.log("Could not restart recognition:", e.message);
+              if (!isAISpeakingRef.current && recognitionRef.current && !isMuted) {
+                try {
+                  recognitionRef.current.start();
+                  setIsListening(true);
+                  console.log("🎤 Mic turned back on - AI speech interrupted");
+                } catch (e: any) {
+                  console.log("Could not restart recognition:", e.message);
+                }
               }
-            }, 300);
+            }, 500);
           }
         };
         
@@ -396,6 +438,7 @@ export default function VoiceCall() {
     // If transcript appears (user is speaking), stop AI immediately
     if (transcript && transcript.trim().length > 0) {
       window.speechSynthesis.cancel();
+      isAISpeakingRef.current = false; // User interrupted AI
     }
   }, [transcript]);
 
