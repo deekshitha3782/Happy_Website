@@ -35,17 +35,10 @@ export default function VoiceCall() {
   const lastReadMessageId = useRef<number | null>(null);
   const hasInitialized = useRef(false);
   const lastSentMessageRef = useRef<string>(""); // Prevent duplicate sends
-  const recentSentMessagesRef = useRef<string[]>([]); // Track recent sent messages (for duplicate detection)
-  const sendTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Wait for complete sentences
+  const sendTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce sending
   const audioContextRef = useRef<AudioContext | null>(null); // Web Audio API for gain boost
   const mediaStreamRef = useRef<MediaStream | null>(null); // Keep mic stream active
   const recentAIMessagesRef = useRef<string[]>([]); // Track recent AI messages to filter echo
-  const lastAISpeakTimeRef = useRef<number>(0); // Track when AI last spoke (for echo filtering)
-  const isAISpeakingRef = useRef<boolean>(false); // Track if AI is currently speaking (MOBILE: block all speech)
-  const pendingTranscriptRef = useRef<string>(""); // Accumulate transcript before sending
-  const lastSendTimeRef = useRef<number>(0); // Track when last message was sent (cooldown for duplicates)
-  const isSendingRef = useRef<boolean>(false); // Prevent multiple simultaneous sends (mobile sends duplicates)
-  const isListeningRef = useRef<boolean>(false); // Track listening state for utterance handlers
 
   // Detect device/browser type
   const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -126,7 +119,6 @@ export default function VoiceCall() {
       recognitionRef.current.onstart = () => {
         setCallStatus("Connected");
         setIsListening(true);
-        isListeningRef.current = true; // Update ref for utterance handlers
         console.log("✅ Speech recognition started - listening continuously");
         console.log("📱 Device info:", { isMobile, userAgent: navigator.userAgent.substring(0, 50) });
       };
@@ -176,292 +168,90 @@ export default function VoiceCall() {
         }
       };
 
-      // REAL-TIME: Improved handler with echo filtering, complete sentence detection, and instant sending
+      // SIMPLIFIED: Match chat recording's onresult handler exactly
       recognitionRef.current.onresult = (event: any) => {
-        let interimTranscript = "";
-        let finalTranscript = "";
-        
-        // Process all results
+        // Same simple approach as chat recording - works perfectly on mobile!
+        let transcript = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          const transcript = result[0].transcript || "";
-          
-          if (result.isFinal) {
-            // Final result - accumulate for complete sentence
-            finalTranscript += transcript + " ";
-          } else {
-            // Interim result - show in real-time
-            interimTranscript += transcript;
-          }
+          transcript += event.results[i][0].transcript;
         }
         
-        // MOBILE: Block ALL results if AI is speaking (extra safety)
-        if (isMobile && isAISpeakingRef.current) {
-          console.log("🚫 BLOCKED: Ignoring all results - AI is speaking (mobile)");
-          setTranscript("");
-          return; // Don't process any results while AI is speaking
-        }
-        
-        // Update transcript display (show interim + accumulated final)
-        const displayText = (pendingTranscriptRef.current + finalTranscript + interimTranscript).trim();
-        if (displayText) {
-          setTranscript(displayText);
+        // Update transcript display (show what's being captured)
+        if (transcript.trim()) {
+          setTranscript(transcript);
           // Stop AI speech immediately when user speaks
           window.speechSynthesis.cancel();
         }
         
-        // When we get final results, accumulate them
-        if (finalTranscript.trim()) {
-          pendingTranscriptRef.current += finalTranscript;
-          
-          // Clear any existing timeout
-          if (sendTimeoutRef.current) {
-            clearTimeout(sendTimeoutRef.current);
-          }
-          
-          // Wait a short time (500ms) to see if more speech comes
-          // This ensures we get complete sentences, not half sentences
-          sendTimeoutRef.current = setTimeout(() => {
-            const completeSentence = pendingTranscriptRef.current.trim();
-            pendingTranscriptRef.current = ""; // Clear accumulated
-            
-            if (!completeSentence || completeSentence.length < 2) {
-              return;
-            }
-            
-            // ULTRA-AGGRESSIVE ECHO FILTERING FOR MOBILE (like laptop):
-            const trimmedLower = completeSentence.toLowerCase();
-            const timeSinceAISpoke = Date.now() - lastAISpeakTimeRef.current;
-            
-            // MOBILE: Block ALL speech when AI is speaking or just finished (like laptop)
-            if (isMobile) {
-              // 1. Block if AI is currently speaking (most important)
-              if (isAISpeakingRef.current) {
-                console.log("🚫 BLOCKED: AI is currently speaking (mobile)", completeSentence);
-                setTranscript("");
-                return;
-              }
-              
-              // 2. Block ALL speech within 8 seconds after AI spoke (very strict)
-              const mobileEchoWindow = 8000; // 8 seconds on mobile
-              if (timeSinceAISpoke < mobileEchoWindow) {
-                console.log("🚫 BLOCKED: Speech too soon after AI (mobile)", {
-                  completeSentence,
-                  timeSinceAISpoke,
-                  window: mobileEchoWindow
-                });
-                setTranscript("");
-                return;
-              }
-              
-              // 3. Even after window, check similarity (very strict)
-              const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
-                const similarity = calculateSimilarity(trimmedLower, aiMsg);
-                return similarity > 0.2; // 20% similarity = reject (very strict)
-              });
-              
-              if (isSimilarEcho) {
-                console.log("🚫 BLOCKED: Similar to AI message (mobile)", completeSentence);
-                setTranscript("");
-                return;
-              }
-            } else {
-              // DESKTOP: Normal filtering (works fine)
-              const echoTimeWindow = 3000;
-              const similarityThreshold = 0.5;
-              const isRecentEcho = timeSinceAISpoke < echoTimeWindow;
-              const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
-                const similarity = calculateSimilarity(trimmedLower, aiMsg);
-                return similarity > similarityThreshold;
-              });
-              
-              if (isRecentEcho && isSimilarEcho) {
-                console.log("🚫 ECHO DETECTED (desktop):", completeSentence);
-                setTranscript("");
-                return;
-              }
-            }
-            
-            // ULTRA-STRICT DUPLICATE DETECTION FOR MOBILE (prevent 3-4x sends):
-            const now = Date.now();
-            const timeSinceLastSend = now - lastSendTimeRef.current;
-            
-            // MOBILE: Much stricter duplicate prevention
-            if (isMobile) {
-              // 1. Prevent simultaneous sends (mobile sends same result multiple times)
-              if (isSendingRef.current) {
-                console.log("⚠️ Already sending - ignoring duplicate:", completeSentence);
-                setTranscript("");
-                return;
-              }
-              
-              // 2. Cooldown period (3 seconds on mobile - reduced for faster response)
-              const mobileCooldown = 3000; // 3 seconds (reduced from 5 for faster response)
-              if (timeSinceLastSend < mobileCooldown) {
-                console.log("⚠️ Cooldown period (mobile):", {
-                  completeSentence,
-                  timeSinceLastSend,
-                  cooldown: mobileCooldown
-                });
-                setTranscript("");
-                return;
-              }
-              
-              // 3. Exact duplicate check
-              if (completeSentence === lastSentMessageRef.current) {
-                console.log("⚠️ Exact duplicate (mobile):", completeSentence);
-                setTranscript("");
-                return;
-              }
-              
-              // 4. Similar duplicate check (70% threshold - stricter)
-              const isSimilarDuplicate = recentSentMessagesRef.current.some(sentMsg => {
-                const similarity = calculateSimilarity(trimmedLower, sentMsg.toLowerCase());
-                return similarity > 0.7; // 70% similar = reject
-              });
-              
-              if (isSimilarDuplicate) {
-                console.log("⚠️ Similar duplicate (mobile):", completeSentence);
-                setTranscript("");
-                return;
-              }
-              
-              // 5. Check if same sentence was sent in last 10 seconds (mobile sends 3-4x)
-              const recentDuplicate = recentSentMessagesRef.current.some(sentMsg => {
-                return sentMsg === trimmedLower;
-              });
-              
-              if (recentDuplicate) {
-                console.log("⚠️ Recent duplicate found (mobile):", completeSentence);
-                setTranscript("");
-                return;
-              }
-            } else {
-              // DESKTOP: Normal duplicate detection (works fine)
-              const cooldownPeriod = 1000;
-              if (completeSentence === lastSentMessageRef.current || timeSinceLastSend < cooldownPeriod) {
-                console.log("⚠️ Duplicate ignored (desktop):", completeSentence);
-                setTranscript("");
-                return;
-              }
-            }
-            
-            // Send immediately (REAL-TIME - no delays)
-            console.log("✅ Sending to AI (real-time):", completeSentence);
-            isSendingRef.current = true; // Set flag to prevent duplicates
-            lastSentMessageRef.current = completeSentence;
-            lastSendTimeRef.current = now;
-            
-            // Track recent sent messages (keep last 10 for mobile, 5 for desktop)
-            recentSentMessagesRef.current.push(completeSentence.toLowerCase());
-            const maxRecent = isMobile ? 10 : 5;
-            if (recentSentMessagesRef.current.length > maxRecent) {
-              recentSentMessagesRef.current.shift();
-            }
-            
-            sendMessage({ role: "user", content: completeSentence }, {
-              onSuccess: () => {
-                isSendingRef.current = false; // Clear flag after success
-              },
-              onError: () => {
-                isSendingRef.current = false; // Clear flag on error
-              }
-            });
-            
-            // Clear transcript after sending
-            setTranscript("");
-          }, 500); // Wait 500ms for more speech to complete the sentence
-        }
-      };
-
-      // Auto-restart for continuous listening + send pending transcript
-      recognitionRef.current.onend = () => {
-        // If we have pending transcript, send it now (user finished speaking)
-        if (pendingTranscriptRef.current.trim() && sendTimeoutRef.current) {
-          clearTimeout(sendTimeoutRef.current);
-          const completeSentence = pendingTranscriptRef.current.trim();
-          pendingTranscriptRef.current = "";
-          
-          // Apply same ultra-strict filtering (mobile-optimized)
-          const trimmedLower = completeSentence.toLowerCase();
-          const timeSinceAISpoke = Date.now() - lastAISpeakTimeRef.current;
-          
-          // MOBILE: Same strict blocking as main handler
-          if (isMobile) {
-            if (isAISpeakingRef.current || timeSinceAISpoke < 8000) {
-              console.log("🚫 BLOCKED (onend, mobile):", completeSentence);
-              return;
-            }
-            
-            const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
-              const similarity = calculateSimilarity(trimmedLower, aiMsg);
-              return similarity > 0.2;
-            });
-            
-            if (isSimilarEcho) {
-              console.log("🚫 BLOCKED: Similar to AI (onend, mobile):", completeSentence);
-              return;
-            }
-            
-            // Duplicate checks
-            const now = Date.now();
-            const timeSinceLastSend = now - lastSendTimeRef.current;
-            if (isSendingRef.current || timeSinceLastSend < 3000 || // 3 seconds (reduced from 5)
-                completeSentence === lastSentMessageRef.current ||
-                recentSentMessagesRef.current.includes(trimmedLower)) {
-              console.log("⚠️ Duplicate/cooldown (onend, mobile):", completeSentence);
-              return;
-            }
-          } else {
-            // DESKTOP: Normal checks
-            const isRecentEcho = timeSinceAISpoke < 3000;
-            const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
-              const similarity = calculateSimilarity(trimmedLower, aiMsg);
-              return similarity > 0.5;
-            });
-            
-            const now = Date.now();
-            const timeSinceLastSend = now - lastSendTimeRef.current;
-            if ((isRecentEcho && isSimilarEcho) || 
-                completeSentence === lastSentMessageRef.current || 
-                timeSinceLastSend < 1000) {
-              return;
-            }
-          }
-          
-          // Send if passes all checks
-          if (completeSentence.length >= 2) {
-            console.log("✅ Sending final sentence (onend):", completeSentence);
-            isSendingRef.current = true;
-            lastSentMessageRef.current = completeSentence;
-            lastSendTimeRef.current = Date.now();
-            recentSentMessagesRef.current.push(trimmedLower);
-            const maxRecent = isMobile ? 10 : 5;
-            if (recentSentMessagesRef.current.length > maxRecent) {
-              recentSentMessagesRef.current.shift();
-            }
-            sendMessage({ role: "user", content: completeSentence }, {
-              onSuccess: () => { isSendingRef.current = false; },
-              onError: () => { isSendingRef.current = false; }
-            });
-            setTranscript("");
+        // Only send final results (when user finishes speaking)
+        // Check if any result is final
+        let hasFinal = false;
+        let finalTranscript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            hasFinal = true;
+            finalTranscript += event.results[i][0].transcript + " ";
           }
         }
         
-        // Auto-restart for continuous listening
+        if (hasFinal && finalTranscript.trim()) {
+          const trimmed = finalTranscript.trim();
+          
+          // ECHO FILTERING: Check if this matches recent AI messages
+          const trimmedLower = trimmed.toLowerCase();
+          const isEcho = recentAIMessagesRef.current.some(aiMsg => {
+            const similarity = calculateSimilarity(trimmedLower, aiMsg);
+            return similarity > 0.6;
+          });
+          
+          if (isEcho) {
+            console.log("🚫 ECHO DETECTED - Ignoring AI voice:", trimmed);
+            setTranscript("");
+            return;
+          }
+          
+          // Simple validation - same as chat (just check it's not empty)
+          if (trimmed.length >= 2) {
+            // Prevent duplicates
+            if (trimmed === lastSentMessageRef.current) {
+              console.log("⚠️ Duplicate message ignored:", trimmed);
+              return;
+            }
+            
+            // Send to AI (no complex debouncing - keep it simple like chat)
+            console.log("✅ Sending to AI:", trimmed);
+            lastSentMessageRef.current = trimmed;
+            sendMessage({ role: "user", content: trimmed });
+            
+            // Clear transcript after sending
+            setTimeout(() => {
+              setTranscript("");
+              lastSentMessageRef.current = "";
+            }, 1000);
+          }
+        }
+      };
+
+      // SIMPLIFIED: Match chat recording - simple onend handler
+      // Chat recording doesn't auto-restart, but for call we want continuous
+      // So we auto-restart but keep it simple
+      recognitionRef.current.onend = () => {
+        // Auto-restart for continuous listening (simple approach)
         if (!isMuted && recognitionRef.current) {
+          // Small delay before restart (same as chat would do if it auto-restarted)
           setTimeout(() => {
             if (recognitionRef.current && !isMuted) {
               try {
                 recognitionRef.current.start();
                 console.log("✅ Recognition restarted (continuous listening)");
               } catch (e: any) {
+                // If restart fails, that's okay - user can click button
                 console.log("Could not auto-restart:", e.message);
                 setIsListening(false);
                 setCallStatus("Tap 'Start Listening' to reconnect");
               }
             }
-          }, 300); // Faster restart for real-time
+          }, 500); // Simple delay - same for mobile and desktop
         } else {
           setIsListening(false);
         }
@@ -525,14 +315,11 @@ export default function VoiceCall() {
 
     const lastMessage = messages[messages.length - 1];
     if (lastMessage && lastMessage.role === "assistant" && lastMessage.id !== lastReadMessageId.current) {
-      // Store AI message to filter echo (keep last 5 AI messages for better filtering)
+      // Store AI message to filter echo (keep last 3 AI messages)
       recentAIMessagesRef.current.push(lastMessage.content.toLowerCase());
-      if (recentAIMessagesRef.current.length > 5) {
-        recentAIMessagesRef.current.shift(); // Keep only last 5
+      if (recentAIMessagesRef.current.length > 3) {
+        recentAIMessagesRef.current.shift(); // Keep only last 3
       }
-      
-      // Track when AI starts speaking (for echo filtering)
-      lastAISpeakTimeRef.current = Date.now();
       
       // Wait for voices to be loaded, then speak
       const cleanup = waitForVoices(() => {
@@ -544,52 +331,15 @@ export default function VoiceCall() {
         
         // Add event handlers for better control
         utterance.onstart = () => {
-          // Speech started - record time and set flag
-          lastAISpeakTimeRef.current = Date.now();
-          isAISpeakingRef.current = true;
-          
-          // MOBILE: Actually STOP recognition when AI starts speaking (most aggressive)
-          if (isMobile && recognitionRef.current && isListeningRef.current) {
-            try {
-              recognitionRef.current.stop();
-              console.log("🛑 STOPPED recognition - AI is speaking (mobile)");
-              setIsListening(false);
-              isListeningRef.current = false;
-            } catch (e) {
-              console.log("Could not stop recognition:", e);
-            }
-          }
-          
-          console.log("🔊 AI started speaking");
+          // Speech started - recognition continues running (continuous mode)
         };
         
         utterance.onend = () => {
-          // Speech ended
-          isAISpeakingRef.current = false;
-          lastAISpeakTimeRef.current = Date.now(); // Update time
-          
-          // MOBILE: Restart recognition after AI finishes (with delay to prevent echo)
-          if (isMobile && recognitionRef.current && !isMuted) {
-            setTimeout(() => {
-              if (recognitionRef.current && !isMuted) {
-                try {
-                  recognitionRef.current.start();
-                  setIsListening(true);
-                  isListeningRef.current = true;
-                  console.log("✅ RESTARTED recognition after AI finished (mobile)");
-                } catch (e) {
-                  console.log("Could not restart recognition:", e);
-                  setCallStatus("Tap 'Start Listening' to reconnect");
-                }
-              }
-            }, 2000); // 2 second delay after AI finishes (prevents echo)
-          }
-          
-          console.log("🔇 AI finished speaking");
+          // Speech ended naturally - recognition still running
         };
         
         utterance.onerror = () => {
-          // Speech was interrupted or errored
+          // Speech was interrupted or errored - recognition still running
         };
         
         // Start speaking
