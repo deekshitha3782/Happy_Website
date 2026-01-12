@@ -322,18 +322,52 @@ export default function VoiceCall() {
           const completeSentence = pendingTranscriptRef.current.trim();
           pendingTranscriptRef.current = "";
           
-          // Apply same echo filtering
-          const timeSinceAISpoke = Date.now() - lastAISpeakTimeRef.current;
-          const isRecentEcho = timeSinceAISpoke < 3000;
+          // Apply same aggressive echo filtering (mobile-optimized)
           const trimmedLower = completeSentence.toLowerCase();
+          const timeSinceAISpoke = Date.now() - lastAISpeakTimeRef.current;
+          const echoTimeWindow = isMobile ? 5000 : 3000;
+          const similarityThreshold = isMobile ? 0.3 : 0.5;
+          const commonWordsThreshold = isMobile ? 1 : 2;
+          
+          const isRecentEcho = timeSinceAISpoke < echoTimeWindow;
           const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
             const similarity = calculateSimilarity(trimmedLower, aiMsg);
-            return similarity > 0.5;
+            return similarity > similarityThreshold;
           });
           
-          if (!(isRecentEcho && isSimilarEcho) && completeSentence !== lastSentMessageRef.current && completeSentence.length >= 2) {
+          let hasCommonWords = false;
+          if (isRecentEcho) {
+            hasCommonWords = recentAIMessagesRef.current.some(aiMsg => {
+              const userWords = trimmedLower.split(/\s+/).filter(w => w.length > 2);
+              const aiWords = aiMsg.split(/\s+/).filter(w => w.length > 2);
+              const commonWords = userWords.filter(w => aiWords.includes(w));
+              return commonWords.length >= commonWordsThreshold;
+            });
+          }
+          
+          // Check duplicates
+          const now = Date.now();
+          const timeSinceLastSend = now - lastSendTimeRef.current;
+          const cooldownPeriod = isMobile ? 2000 : 1000;
+          const isExactDuplicate = completeSentence === lastSentMessageRef.current;
+          const isSimilarDuplicate = recentSentMessagesRef.current.some(sentMsg => {
+            const similarity = calculateSimilarity(trimmedLower, sentMsg.toLowerCase());
+            return similarity > 0.8;
+          });
+          
+          // Only send if passes all checks
+          if (!(isRecentEcho && (isSimilarEcho || hasCommonWords)) && 
+              !isExactDuplicate && 
+              !isSimilarDuplicate && 
+              timeSinceLastSend >= cooldownPeriod && 
+              completeSentence.length >= 2) {
             console.log("✅ Sending final sentence (onend):", completeSentence);
             lastSentMessageRef.current = completeSentence;
+            lastSendTimeRef.current = now;
+            recentSentMessagesRef.current.push(trimmedLower);
+            if (recentSentMessagesRef.current.length > 5) {
+              recentSentMessagesRef.current.shift();
+            }
             sendMessage({ role: "user", content: completeSentence });
             setTranscript("");
           }
