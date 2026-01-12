@@ -255,8 +255,8 @@ export async function registerRoutes(
       }));
 
       // 3. System prompt - MAX 2 SENTENCES, MAX 10 SECONDS, SAFETY CHECKS
-      // Check if this is initial greeting
-      const isInitialGreeting = history.length === 0 && (userMessage.toLowerCase() === "start" || userMessage.toLowerCase().includes("hi"));
+      // Check if this is initial greeting (only 1 message in history = the one we just saved)
+      const isInitialGreeting = history.length === 1 && (userMessage.toLowerCase() === "start" || userMessage.toLowerCase().includes("hi"));
       
       let systemContent = "";
       if (isInitialGreeting) {
