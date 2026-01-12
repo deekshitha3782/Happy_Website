@@ -269,26 +269,45 @@ export default function VoiceCall() {
         }
       };
 
-      // SIMPLIFIED: Match chat recording - simple onend handler
-      // Chat recording doesn't auto-restart, but for call we want continuous
-      // So we auto-restart but keep it simple
+      // Auto-restart for continuous listening + send pending transcript
       recognitionRef.current.onend = () => {
-        // Auto-restart for continuous listening (simple approach)
+        // If we have pending transcript, send it now (user finished speaking)
+        if (pendingTranscriptRef.current.trim() && sendTimeoutRef.current) {
+          clearTimeout(sendTimeoutRef.current);
+          const completeSentence = pendingTranscriptRef.current.trim();
+          pendingTranscriptRef.current = "";
+          
+          // Apply same echo filtering
+          const timeSinceAISpoke = Date.now() - lastAISpeakTimeRef.current;
+          const isRecentEcho = timeSinceAISpoke < 3000;
+          const trimmedLower = completeSentence.toLowerCase();
+          const isSimilarEcho = recentAIMessagesRef.current.some(aiMsg => {
+            const similarity = calculateSimilarity(trimmedLower, aiMsg);
+            return similarity > 0.5;
+          });
+          
+          if (!(isRecentEcho && isSimilarEcho) && completeSentence !== lastSentMessageRef.current && completeSentence.length >= 2) {
+            console.log("✅ Sending final sentence (onend):", completeSentence);
+            lastSentMessageRef.current = completeSentence;
+            sendMessage({ role: "user", content: completeSentence });
+            setTranscript("");
+          }
+        }
+        
+        // Auto-restart for continuous listening
         if (!isMuted && recognitionRef.current) {
-          // Small delay before restart (same as chat would do if it auto-restarted)
           setTimeout(() => {
             if (recognitionRef.current && !isMuted) {
               try {
                 recognitionRef.current.start();
                 console.log("✅ Recognition restarted (continuous listening)");
               } catch (e: any) {
-                // If restart fails, that's okay - user can click button
                 console.log("Could not auto-restart:", e.message);
                 setIsListening(false);
                 setCallStatus("Tap 'Start Listening' to reconnect");
               }
             }
-          }, 500); // Simple delay - same for mobile and desktop
+          }, 300); // Faster restart for real-time
         } else {
           setIsListening(false);
         }
