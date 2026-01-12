@@ -45,6 +45,7 @@ export default function VoiceCall() {
   const pendingTranscriptRef = useRef<string>(""); // Accumulate transcript before sending
   const lastSendTimeRef = useRef<number>(0); // Track when last message was sent (cooldown for duplicates)
   const isSendingRef = useRef<boolean>(false); // Prevent multiple simultaneous sends (mobile sends duplicates)
+  const isListeningRef = useRef<boolean>(false); // Track listening state for utterance handlers
 
   // Detect device/browser type
   const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -125,6 +126,7 @@ export default function VoiceCall() {
       recognitionRef.current.onstart = () => {
         setCallStatus("Connected");
         setIsListening(true);
+        isListeningRef.current = true; // Update ref for utterance handlers
         console.log("✅ Speech recognition started - listening continuously");
         console.log("📱 Device info:", { isMobile, userAgent: navigator.userAgent.substring(0, 50) });
       };
@@ -547,11 +549,12 @@ export default function VoiceCall() {
           isAISpeakingRef.current = true;
           
           // MOBILE: Actually STOP recognition when AI starts speaking (most aggressive)
-          if (isMobile && recognitionRef.current && isListening) {
+          if (isMobile && recognitionRef.current && isListeningRef.current) {
             try {
               recognitionRef.current.stop();
               console.log("🛑 STOPPED recognition - AI is speaking (mobile)");
               setIsListening(false);
+              isListeningRef.current = false;
             } catch (e) {
               console.log("Could not stop recognition:", e);
             }
@@ -572,6 +575,7 @@ export default function VoiceCall() {
                 try {
                   recognitionRef.current.start();
                   setIsListening(true);
+                  isListeningRef.current = true;
                   console.log("✅ RESTARTED recognition after AI finished (mobile)");
                 } catch (e) {
                   console.log("Could not restart recognition:", e);
