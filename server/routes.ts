@@ -337,7 +337,7 @@ export async function registerRoutes(
               body: JSON.stringify({
                 inputs: hfMessages.map(m => `${m.role}: ${m.content}`).join("\n") + "\nassistant:",
                 parameters: {
-                  max_new_tokens: 150, // Reduced to encourage concise, shorter responses
+                  max_new_tokens: 80, // Limit to 2 sentences max (reduced from 150)
                   temperature: 0.8, // Slightly higher for more lively responses
                   return_full_text: false,
                 },
