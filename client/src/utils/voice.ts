@@ -170,6 +170,9 @@ export function waitForVoices(callback: () => void): () => void {
   };
 }
 
+// Global reference to current audio instance to prevent overlap
+let currentAudioInstance: HTMLAudioElement | null = null;
+
 /**
  * Speak text using Microsoft Edge TTS (consistent voice) or fallback to browser TTS
  * Edge TTS is FREE and provides the SAME voice across all devices - no API key needed!
@@ -187,6 +190,14 @@ export async function speakWithEdgeTTS(
   onError?: (error: Error) => void
 ): Promise<() => void> {
   try {
+    // CRITICAL: Cancel any existing audio before starting new one
+    if (currentAudioInstance) {
+      console.log("🛑 Stopping previous audio to prevent overlap");
+      currentAudioInstance.pause();
+      currentAudioInstance.currentTime = 0;
+      currentAudioInstance = null;
+    }
+    
     // Try Edge TTS first (FREE, no API key needed!)
     const response = await fetch("/api/tts", {
       method: "POST",
@@ -218,6 +229,9 @@ export async function speakWithEdgeTTS(
     const audioBlob = new Blob([audioArray], { type: "audio/mp3" });
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
+    
+    // Store as current instance
+    currentAudioInstance = audio;
 
     let cancelled = false;
 
@@ -227,17 +241,26 @@ export async function speakWithEdgeTTS(
 
     audio.onended = () => {
       URL.revokeObjectURL(audioUrl);
+      if (currentAudioInstance === audio) {
+        currentAudioInstance = null; // Clear reference when done
+      }
       if (!cancelled && onEnd) onEnd();
     };
 
     audio.onerror = (e) => {
       URL.revokeObjectURL(audioUrl);
+      if (currentAudioInstance === audio) {
+        currentAudioInstance = null; // Clear reference on error
+      }
       if (!cancelled && onError) {
         onError(new Error("Audio playback failed"));
       }
     };
 
     audio.play().catch((error) => {
+      if (currentAudioInstance === audio) {
+        currentAudioInstance = null; // Clear reference on play error
+      }
       if (!cancelled && onError) {
         onError(error);
       }
@@ -249,6 +272,9 @@ export async function speakWithEdgeTTS(
       audio.pause();
       audio.currentTime = 0;
       URL.revokeObjectURL(audioUrl);
+      if (currentAudioInstance === audio) {
+        currentAudioInstance = null; // Clear reference when cancelled
+      }
     };
 
   } catch (error) {
@@ -268,24 +294,30 @@ function speakWithBrowserTTS(
   onEnd?: () => void,
   onError?: (error: Error) => void
 ): () => void {
-  const utterance = new SpeechSynthesisUtterance(text);
-  configureFemaleVoice(utterance);
+  // CRITICAL: Cancel any existing speech before starting new one
+  window.speechSynthesis.cancel();
+  
+  // Small delay to ensure previous speech is fully canceled
+  setTimeout(() => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    configureFemaleVoice(utterance);
 
-  if (onStart) {
-    utterance.onstart = onStart;
-  }
+    if (onStart) {
+      utterance.onstart = onStart;
+    }
 
-  if (onEnd) {
-    utterance.onend = onEnd;
-  }
+    if (onEnd) {
+      utterance.onend = onEnd;
+    }
 
-  if (onError) {
-    utterance.onerror = (event) => {
-      onError(new Error("Speech synthesis failed"));
-    };
-  }
+    if (onError) {
+      utterance.onerror = (event) => {
+        onError(new Error("Speech synthesis failed"));
+      };
+    }
 
-  window.speechSynthesis.speak(utterance);
+    window.speechSynthesis.speak(utterance);
+  }, 50); // Small delay to ensure cleanup
 
   // Return cancel function
   return () => {
