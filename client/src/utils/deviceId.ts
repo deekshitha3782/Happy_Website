@@ -1,22 +1,17 @@
 /**
- * Generate or retrieve a unique device ID
- * Uses localStorage to persist the ID across sessions
- * Each device gets its own unique ID
+ * Generate or retrieve a unique device ID for session separation
+ * Uses localStorage to persist across page reloads
  */
 export function getDeviceId(): string {
   const STORAGE_KEY = 'kind-mind-device-id';
   
-  // Try to get existing ID from localStorage
+  // Try to get existing device ID
   let deviceId = localStorage.getItem(STORAGE_KEY);
   
+  // If no device ID exists, generate a new one
   if (!deviceId) {
-    // Generate a new unique ID
-    // Format: timestamp-randomstring
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substring(2, 15);
-    deviceId = `${timestamp}-${random}`;
-    
-    // Store in localStorage for persistence
+    // Generate a unique ID using timestamp + random
+    deviceId = `device-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     localStorage.setItem(STORAGE_KEY, deviceId);
     console.log("🆔 Generated new device ID:", deviceId);
   } else {
