@@ -8,7 +8,7 @@ import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { configureFemaleVoice, waitForVoices } from "@/utils/voice";
+import { speakWithEdgeTTS } from "@/utils/voice";
 
 export default function Chat() {
   const { data: messages, isLoading, error: messagesError } = useMessages("chat"); // Use "chat" session type
@@ -31,23 +31,34 @@ export default function Chat() {
     }
   }, [isLoading, messages, clearChat]);
 
-  // Voice output logic with consistent female voice
+  // Voice output logic with Edge TTS (consistent voice, FREE!) or browser TTS fallback
   useEffect(() => {
     if (!isVoiceEnabled || !messages) return;
 
     const lastMessage = messages[messages.length - 1];
     if (lastMessage && lastMessage.role === "assistant" && lastMessage.id !== lastReadMessageId.current) {
-      // Wait for voices to be loaded, then speak
-      const cleanup = waitForVoices(() => {
-        const utterance = new SpeechSynthesisUtterance(lastMessage.content);
-        configureFemaleVoice(utterance);
-        
-        window.speechSynthesis.cancel(); // Stop any current speech
-        window.speechSynthesis.speak(utterance);
-        lastReadMessageId.current = lastMessage.id;
+      window.speechSynthesis.cancel(); // Stop any current speech
+      
+      let cancelSpeech: (() => void) | null = null;
+      
+      speakWithEdgeTTS(
+        lastMessage.content,
+        undefined, // onStart
+        undefined, // onEnd
+        undefined  // onError
+      ).then((cancelFn) => {
+        cancelSpeech = cancelFn;
       });
 
-      return cleanup;
+      lastReadMessageId.current = lastMessage.id;
+
+      // Return cleanup function
+      return () => {
+        if (cancelSpeech) {
+          cancelSpeech();
+        }
+        window.speechSynthesis.cancel();
+      };
     }
   }, [messages, isVoiceEnabled]);
 

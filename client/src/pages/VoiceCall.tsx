@@ -5,7 +5,7 @@ import { PhoneOff, Mic, MicOff, Volume2, VolumeX, CloudSun, HeartHandshake } fro
 import { useMessages, useSendMessage, useClearChat } from "@/hooks/use-messages";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { configureFemaleVoice, waitForVoices } from "@/utils/voice";
+import { speakWithEdgeTTS } from "@/utils/voice";
 
 // Helper function to calculate similarity between two strings (for echo detection)
 function calculateSimilarity(str1: string, str2: string): number {
@@ -373,7 +373,7 @@ export default function VoiceCall() {
           };
   }, [sendMessage, isMuted]);
 
-  // Voice Output (TTS) with consistent female voice - turn mic off when AI speaks
+  // Voice Output (TTS) with Google Cloud TTS (consistent voice) or browser TTS fallback
   useEffect(() => {
     if (!isSpeakerOn || !messages) return;
 
@@ -385,30 +385,29 @@ export default function VoiceCall() {
         recentAIMessagesRef.current.shift(); // Keep only last 3
       }
       
-      // Wait for voices to be loaded, then speak
-      const cleanup = waitForVoices(() => {
-        const utterance = new SpeechSynthesisUtterance(lastMessage.content);
-        configureFemaleVoice(utterance);
-        
-        // Cancel any ongoing speech before starting new one
-        window.speechSynthesis.cancel();
-        
-        // TURN MIC OFF when AI starts speaking - FORCE STOP
-        isAISpeakingRef.current = true; // Mark AI as speaking
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.stop();
-            recognitionRef.current.abort(); // Force stop
-            setIsListening(false);
-            console.log("🔇 Mic turned off - AI is speaking");
-          } catch (e) {
-            console.log("Could not stop recognition:", e);
-          }
+      // Cancel any ongoing speech before starting new one
+      window.speechSynthesis.cancel();
+      
+      // TURN MIC OFF when AI starts speaking - FORCE STOP
+      isAISpeakingRef.current = true; // Mark AI as speaking
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+          recognitionRef.current.abort(); // Force stop
+          setIsListening(false);
+          console.log("🔇 Mic turned off - AI is speaking");
+        } catch (e) {
+          console.log("Could not stop recognition:", e);
         }
-        
-        // Add event handlers for better control
-        utterance.onstart = () => {
-          // Speech started - ensure mic is off
+      }
+
+      // Use Edge TTS (FREE, consistent voice) with browser TTS fallback
+      let cancelSpeech: (() => void) | null = null;
+      
+      speakWithEdgeTTS(
+        lastMessage.content,
+        () => {
+          // onStart - Speech started - ensure mic is off
           isAISpeakingRef.current = true;
           if (recognitionRef.current && isListening) {
             try {
@@ -419,10 +418,9 @@ export default function VoiceCall() {
               // Ignore errors
             }
           }
-        };
-        
-        utterance.onend = () => {
-          // Speech ended - TURN MIC BACK ON
+        },
+        () => {
+          // onEnd - Speech ended - TURN MIC BACK ON
           isAISpeakingRef.current = false; // Mark AI as finished
           if (recognitionRef.current && !isMuted) {
             setTimeout(() => {
@@ -438,10 +436,9 @@ export default function VoiceCall() {
               }
             }, 500); // Delay before restarting
           }
-        };
-        
-        utterance.onerror = () => {
-          // Speech was interrupted - TURN MIC BACK ON
+        },
+        () => {
+          // onError - Speech was interrupted - TURN MIC BACK ON
           isAISpeakingRef.current = false; // Mark AI as finished
           if (recognitionRef.current && !isMuted) {
             setTimeout(() => {
@@ -456,14 +453,20 @@ export default function VoiceCall() {
               }
             }, 500);
           }
-        };
-        
-        // Start speaking
-        window.speechSynthesis.speak(utterance);
-        lastReadMessageId.current = lastMessage.id;
+        }
+      ).then((cancelFn) => {
+        cancelSpeech = cancelFn;
       });
 
-      return cleanup;
+      lastReadMessageId.current = lastMessage.id;
+
+      // Return cleanup function
+      return () => {
+        if (cancelSpeech) {
+          cancelSpeech();
+        }
+        window.speechSynthesis.cancel();
+      };
     }
   }, [messages, isSpeakerOn, isListening, isMuted]);
   

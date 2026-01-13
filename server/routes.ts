@@ -192,6 +192,83 @@ export async function registerRoutes(
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // Text-to-Speech endpoint using Microsoft Edge TTS (FREE, NO API KEY REQUIRED!)
+  // Provides consistent female voice across ALL devices
+  app.post("/api/tts", async (req, res) => {
+    try {
+      const { text } = req.body;
+      
+      if (!text || typeof text !== "string") {
+        return res.status(400).json({ error: "Text is required" });
+      }
+
+      // Microsoft Edge TTS - FREE, no API key needed!
+      // Uses the same TTS engine as Microsoft Edge browser
+      // Voice: en-US-AriaNeural (pleasant female voice, consistent across devices)
+      
+      try {
+        // Edge TTS uses WebSocket-like communication, but we can use the REST endpoint
+        // Create SSML for better voice control
+        const ssmlText = `<speak version="1.0" xml:lang="en-US">
+          <voice xml:lang="en-US" xml:gender="Female" name="en-US-AriaNeural">
+            <prosody rate="0.9">
+              ${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')}
+            </prosody>
+          </voice>
+        </speak>`;
+        
+        // Use Edge TTS REST endpoint (public, no auth needed)
+        // This endpoint is used by Microsoft Edge browser
+        const encodedText = encodeURIComponent(ssmlText);
+        const ttsUrl = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/tts?text=${encodedText}&voice=en-US-AriaNeural&format=audio-24khz-48kbitrate-mono-mp3`;
+        
+        const response = await fetch(ttsUrl, {
+          method: "GET",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+            "Referer": "https://www.microsoft.com/",
+            "Accept": "audio/mpeg, audio/*;q=0.9",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Edge TTS HTTP error: ${response.status}`);
+        }
+
+        // Get audio as ArrayBuffer
+        const audioBuffer = await response.arrayBuffer();
+        
+        // Convert to base64
+        const base64Audio = Buffer.from(audioBuffer).toString('base64');
+        
+        // Return base64 audio data
+        res.status(200).json({
+          audioContent: base64Audio, // Base64 encoded MP3
+          useBrowserTTS: false,
+          format: "audio/mpeg"
+        });
+
+      } catch (edgeTtsError) {
+        console.error("Edge TTS error:", edgeTtsError);
+        // Fallback to browser TTS on error
+        return res.status(200).json({ 
+          useBrowserTTS: true,
+          message: "Edge TTS service unavailable, using browser TTS",
+          details: edgeTtsError instanceof Error ? edgeTtsError.message : String(edgeTtsError)
+        });
+      }
+
+    } catch (error) {
+      console.error("TTS endpoint error:", error);
+      // Fallback to browser TTS on error
+      res.status(200).json({ 
+        useBrowserTTS: true,
+        message: "Edge TTS service error, using browser TTS",
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
   app.get(api.messages.list.path, async (req, res) => {
     try {
       // Get session type from query parameter (default to 'chat')
