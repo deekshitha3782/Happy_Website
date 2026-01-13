@@ -46,22 +46,26 @@ export default function VoiceCall() {
   const ttsQueueRef = useRef<Array<{ id: number; content: string }>>([]); // Queue for TTS messages
 
   // Detect device/browser type
-  const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const isIOSSafari = isIOS && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  const isIOSChrome = isIOS && /CriOS|FxiOS/i.test(navigator.userAgent); // iOS Chrome or Firefox
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-  // Enhanced iOS debugging (helps when testing remotely)
-  useEffect(() => {
-    console.log("📱 Device Detection:", {
-      isIOSSafari,
-      isSafari,
-      isMobile,
-      userAgent: navigator.userAgent,
-      platform: navigator.platform,
-      hasSpeechRecognition: !!(window as any).webkitSpeechRecognition || !!(window as any).SpeechRecognition,
-      hasWakeLock: 'wakeLock' in navigator,
-    });
-  }, [isIOSSafari, isSafari, isMobile]);
+      // Enhanced iOS debugging (helps when testing remotely)
+      useEffect(() => {
+        console.log("📱 Device Detection:", {
+          isIOS,
+          isIOSSafari,
+          isIOSChrome,
+          isSafari,
+          isMobile,
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          hasSpeechRecognition: !!(window as any).webkitSpeechRecognition || !!(window as any).SpeechRecognition,
+          hasWakeLock: 'wakeLock' in navigator,
+        });
+      }, [isIOS, isIOSSafari, isIOSChrome, isSafari, isMobile]);
 
   // Wake Lock API - Prevent screen timeout (like commercial AI agents)
   useEffect(() => {
@@ -129,8 +133,10 @@ export default function VoiceCall() {
       return;
     }
 
-    // iOS Safari: Will try to auto-start (may require user interaction)
-    if (isIOSSafari && isSafari) {
+    // iOS Chrome/Safari: Need special handling
+    if (isIOSChrome) {
+      console.log("ℹ️ iOS Chrome detected - may need user interaction to start");
+    } else if (isIOSSafari && isSafari) {
       console.log("ℹ️ iOS Safari detected - attempting auto-start");
     }
 
@@ -152,8 +158,12 @@ export default function VoiceCall() {
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
       
-      // Set language to Indian English for better accent matching
-      if (isIOSSafari || isMobile) {
+      // Set language - iOS Chrome sometimes needs en-US for better compatibility
+      if (isIOSChrome) {
+        // iOS Chrome: Try en-US first (more reliable), fallback to en-IN
+        recognitionRef.current.lang = 'en-US';
+        console.log("🌐 iOS Chrome: Using en-US for better compatibility");
+      } else if (isIOSSafari || isMobile) {
         recognitionRef.current.lang = 'en-IN'; // Indian English
       } else {
         recognitionRef.current.lang = 'en-IN'; // Indian English for all devices
@@ -169,7 +179,7 @@ export default function VoiceCall() {
         setCallStatus("Connected");
         setIsListening(true);
         console.log("✅ Speech recognition started - listening continuously");
-        console.log("📱 Device info:", { isMobile, isIOSSafari, isSafari, userAgent: navigator.userAgent.substring(0, 50) });
+        console.log("📱 Device info:", { isMobile, isIOS, isIOSSafari, isIOSChrome, isSafari, userAgent: navigator.userAgent.substring(0, 50) });
       };
 
       recognitionRef.current.onerror = (event: any) => {
@@ -338,6 +348,8 @@ export default function VoiceCall() {
         
         // Auto-restart for continuous listening (only if AI is not speaking)
         if (!isMuted && recognitionRef.current && !isAISpeakingRef.current) {
+          // iOS Chrome: Needs longer delay before restart
+          const restartDelay = isIOSChrome ? 1500 : 500;
           setTimeout(() => {
             if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
               try {
@@ -348,7 +360,8 @@ export default function VoiceCall() {
                 console.log("Could not auto-restart:", e.message);
                 setIsListening(false);
                 setCallStatus("Reconnecting...");
-                // Auto-retry after delay
+                // Auto-retry after delay (longer for iOS Chrome)
+                const retryDelay = isIOSChrome ? 3000 : 2000;
                 setTimeout(() => {
                   if (recognitionRef.current && !isMuted) {
                     try {
@@ -357,10 +370,10 @@ export default function VoiceCall() {
                       console.log("Auto-retry failed:", retryError);
                     }
                   }
-                }, 2000);
+                }, retryDelay);
               }
             }
-          }, 500);
+          }, restartDelay);
         } else {
           setIsListening(false);
         }
@@ -396,30 +409,38 @@ export default function VoiceCall() {
     // Initialize on mount
     initSpeechRecognition();
 
-    // Auto-start for all browsers (including iOS Safari - will try)
+    // Auto-start for all browsers (including iOS Safari/Chrome - will try)
     if (!isMuted) {
+      // iOS Chrome: May need longer delay and user interaction
+      const startDelay = isIOSChrome ? 1000 : 500;
+      const retryDelay = isIOSChrome ? 2000 : 1000;
+      
       setTimeout(() => {
         if (recognitionRef.current && !isMuted) {
           try {
             recognitionRef.current.start();
             console.log("✅ Auto-starting speech recognition");
           } catch (e: any) {
-            console.log("Auto-start failed:", e.message);
+            console.log("Auto-start failed:", e.message, isIOSChrome ? "(iOS Chrome - may need user interaction)" : "");
             setCallStatus("Connecting...");
-            // Retry once after a delay (iOS may need more time)
+            // Retry once after a delay (iOS Chrome may need more time)
             setTimeout(() => {
               if (recognitionRef.current && !isMuted) {
                 try {
                   recognitionRef.current.start();
                 } catch (retryError: any) {
                   console.log("Retry failed:", retryError.message);
-                  setCallStatus("Microphone permission needed");
+                  if (isIOSChrome) {
+                    setCallStatus("Tap screen to enable microphone");
+                  } else {
+                    setCallStatus("Microphone permission needed");
+                  }
                 }
               }
-            }, 1000);
+            }, retryDelay);
           }
         }
-      }, 500);
+      }, startDelay);
     }
 
           return () => {
