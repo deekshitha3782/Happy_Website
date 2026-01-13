@@ -192,8 +192,8 @@ export async function registerRoutes(
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Text-to-Speech endpoint using Google Translate TTS (FREE, NO API KEY REQUIRED!)
-  // This is a reliable free TTS service that works consistently
+  // Text-to-Speech endpoint using Microsoft Edge TTS (FREE NEURAL TTS with SSML support!)
+  // Edge TTS is free, neural, and supports SSML for human-like speech
   app.post("/api/tts", async (req, res) => {
     try {
       const { text } = req.body;
@@ -202,36 +202,57 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Text is required" });
       }
 
-      // Try multiple free TTS services for reliability
-      // Google Translate TTS - FREE, no API key needed
+      // Edge TTS - FREE neural TTS with SSML support
       try {
-        // Limit text length to avoid issues (split long text if needed)
-        const textToSpeak = text.length > 200 ? text.substring(0, 200) : text;
-        const encodedText = encodeURIComponent(textToSpeak);
+        // Edge TTS uses Indian English female voice (neural, human-like)
+        // Voice: "en-IN-NeerjaNeural" (Indian English, female, neural)
+        const voice = "en-IN-NeerjaNeural"; // Indian English female neural voice
         
-        // Try Google Translate TTS first - using Indian English accent (en-IN)
-        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en-IN&client=tw-ob`;
+        // Prepare SSML content
+        let ssmlText = text;
         
-        console.log("🔊 Attempting Google Translate TTS for text:", textToSpeak.substring(0, 50) + "...");
+        // Check if text already contains SSML tags
+        if (!text.includes('<speak>') && !text.includes('<prosody>') && !text.includes('<break>')) {
+          // Wrap plain text in SSML for better prosody (calm, slow, soft)
+          ssmlText = `<speak><prosody rate="slow" volume="soft">${text}</prosody></speak>`;
+        } else if (!text.trim().startsWith('<speak>')) {
+          // Ensure text is wrapped in <speak> tags
+          ssmlText = `<speak>${text}</speak>`;
+        }
         
-        const response = await fetch(ttsUrl, {
-          method: "GET",
+        console.log("🔊 Attempting Edge TTS (neural) with SSML:", text.substring(0, 50) + "...");
+        
+        // Use Edge TTS web API (free, no auth needed)
+        // Format: POST to Edge TTS endpoint with SSML
+        const edgeTtsUrl = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/v3";
+        
+        // Build full SSML document
+        const fullSSML = `<?xml version="1.0" encoding="UTF-8"?>
+<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-IN">
+  <voice name="${voice}">
+    ${ssmlText.replace(/<speak>|<\/speak>/g, '')}
+  </voice>
+</speak>`;
+        
+        const edgeResponse = await fetch(edgeTtsUrl, {
+          method: "POST",
           headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://translate.google.com/",
-            "Accept": "audio/mpeg, audio/*;q=0.9",
+            "Content-Type": "application/ssml+xml",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
           },
+          body: fullSSML,
         });
 
-        if (response.ok) {
-          const contentType = response.headers.get("content-type");
+        if (edgeResponse.ok) {
+          const contentType = edgeResponse.headers.get("content-type");
           
           // Check if we got audio back
           if (contentType && contentType.includes("audio")) {
-            const audioBuffer = await response.arrayBuffer();
+            const audioBuffer = await edgeResponse.arrayBuffer();
             
             if (audioBuffer.byteLength > 0) {
-              console.log("✅ Google Translate TTS success:", audioBuffer.byteLength, "bytes");
+              console.log("✅ Edge TTS (neural) success:", audioBuffer.byteLength, "bytes");
               const base64Audio = Buffer.from(audioBuffer).toString('base64');
               
               return res.status(200).json({
@@ -240,24 +261,44 @@ export async function registerRoutes(
                 format: "audio/mpeg"
               });
             }
-          } else {
-            // Got non-audio response, might be blocked
-            const responseText = await response.text().catch(() => "");
-            console.warn("⚠️ Google Translate TTS returned non-audio:", contentType, responseText.substring(0, 100));
           }
-        } else {
-          console.warn("⚠️ Google Translate TTS returned status:", response.status, response.statusText);
         }
         
-        // If Google Translate fails, try alternative: ResponsiveVoice (free tier)
-        console.log("🔄 Trying alternative TTS service...");
-        throw new Error(`Google Translate TTS failed with status ${response.status}`);
+        // Fallback: Try Google Translate TTS (removes SSML tags)
+        console.log("🔄 Edge TTS failed, trying Google Translate TTS fallback...");
+        const cleanText = text.replace(/<[^>]*>/g, ''); // Remove SSML tags for Google TTS
+        const encodedText = encodeURIComponent(cleanText);
+        const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en-IN&client=tw-ob`;
+        
+        const googleResponse = await fetch(googleTtsUrl, {
+          method: "GET",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://translate.google.com/",
+            "Accept": "audio/mpeg",
+          },
+        });
+
+        if (googleResponse.ok) {
+          const contentType = googleResponse.headers.get("content-type");
+          if (contentType && contentType.includes("audio")) {
+            const audioBuffer = await googleResponse.arrayBuffer();
+            if (audioBuffer.byteLength > 0) {
+              console.log("✅ Google Translate TTS fallback success");
+              const base64Audio = Buffer.from(audioBuffer).toString('base64');
+              return res.status(200).json({
+                audioContent: base64Audio,
+                useBrowserTTS: false,
+                format: "audio/mpeg"
+              });
+            }
+          }
+        }
+        
+        throw new Error("All TTS services failed");
 
       } catch (ttsError) {
         console.error("❌ TTS error:", ttsError);
-        
-        // Try alternative: Use a simple text-to-speech service
-        // For now, fall back to browser TTS since free cloud TTS services are unreliable
         console.log("⚠️ All cloud TTS services failed, falling back to browser TTS");
         return res.status(200).json({ 
           useBrowserTTS: true,
@@ -268,7 +309,6 @@ export async function registerRoutes(
 
     } catch (error) {
       console.error("TTS endpoint error:", error);
-      // Fallback to browser TTS on error
       res.status(200).json({ 
         useBrowserTTS: true,
         message: "TTS service error, using browser TTS",
@@ -417,7 +457,51 @@ Even if nothing is solved.
 
 CRITICAL: Keep responses to MAXIMUM 2 sentences - be concise but emotionally present.
 
-IMPORTANT: After you respond, WAIT for the user to speak. Do NOT immediately ask another question. Do NOT repeat the same question. Do NOT continue talking. Let there be a natural pause for the user to respond. Only speak again after the user has said something.`;
+IMPORTANT: After you respond, WAIT for the user to speak. Do NOT immediately ask another question. Do NOT repeat the same question. Do NOT continue talking. Let there be a natural pause for the user to respond. Only speak again after the user has said something.
+
+IMPORTANT: SPEECH OUTPUT CONSTRAINTS
+
+All responses will be spoken using a FREE neural Text-to-Speech engine.
+The voice quality is limited, so your wording and SSML usage must
+compensate to sound human and emotionally warm.
+
+SSML IS MANDATORY.
+Every response MUST be wrapped in <speak>...</speak>.
+
+You MUST use ONLY these SSML tags:
+- <speak>
+- <break>
+- <prosody>
+
+DO NOT use any other SSML tags.
+
+SSML STYLE RULES:
+- Use slow, calm pacing
+- Use natural pauses (500ms–1000ms) with <break time="500ms"/>
+- Use <prosody rate="slow" volume="soft"> for emotional sentences
+- Do NOT exaggerate pitch
+- Do NOT overuse pauses
+- Keep SSML subtle and realistic
+
+TEXT WRITING RULES (VERY IMPORTANT):
+- Write exactly how a gentle human would speak
+- Short sentences
+- Simple words
+- Warm, reassuring tone
+- No clinical language
+- No long explanations
+- Avoid lists when emotions are present
+
+The final output must sound natural even with a basic free neural voice.
+
+If forced to choose between:
+- sounding intelligent
+- sounding emotionally human
+
+Always choose emotionally human.
+
+EXAMPLE SSML FORMAT:
+<speak><prosody rate="slow" volume="soft">That sounds really heavy.</prosody> <break time="600ms"/> I'm here with you.</speak>`;
       }
       
       const systemMessage = {

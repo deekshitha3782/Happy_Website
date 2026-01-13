@@ -331,9 +331,9 @@ export default function VoiceCall() {
                 lastSentMessageRef.current = "";
               }, 1000);
             }
-          }, isMobile ? 600 : 400); // Shorter timeout for better responsiveness
+          }, isIOSChrome ? 800 : (isMobile ? 600 : 400)); // iOS Chrome needs longer timeout
           
-          console.log(`⏳ Waiting ${isMobile ? 600 : 400}ms for more input, will send: "${trimmed}"`);
+          console.log(`⏳ Waiting ${isIOSChrome ? 800 : (isMobile ? 600 : 400)}ms for more input, will send: "${trimmed}"`);
         }
       };
 
