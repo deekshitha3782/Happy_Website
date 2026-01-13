@@ -411,12 +411,14 @@ export async function registerRoutes(
         aiContent = generateFallbackResponse(input.content, history);
       }
 
-      // 5. Save assistant message
+      // 5. Save assistant message with same session type
+      const sessionType = (req.body.sessionType as string) || "chat";
       const assistantMessage = await storage.createMessage({
         role: "assistant",
-        content: aiContent
-      });
-      console.log("POST /api/messages - Assistant message saved, ID:", assistantMessage.id);
+        content: aiContent,
+        sessionType
+      } as any);
+      console.log("POST /api/messages - Assistant message saved, ID:", assistantMessage.id, "sessionType:", sessionType);
 
       // 6. Generate speech if requested (mock for now, or use OpenAI TTS if available)
       // Since OpenAI AI integration might not support TTS yet, we'll keep it simple.

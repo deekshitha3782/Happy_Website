@@ -90,7 +90,7 @@ export default function VoiceCall() {
             // AI will respond with simple greeting
             setTimeout(() => {
               sendMessage(
-                { role: "user", content: "start" },
+                { role: "user", content: "start", sessionType: "call" } as any,
                 {
                   onSuccess: () => {
                     // The AI will generate the initial greeting
@@ -278,7 +278,7 @@ export default function VoiceCall() {
               // Send to AI - accept single words and phrases
               console.log("✅ Sending input to AI:", toSend);
               lastSentMessageRef.current = toSend;
-              sendMessage({ role: "user", content: toSend });
+              sendMessage({ role: "user", content: toSend, sessionType: "call" } as any);
               
               // Clear transcript after sending
               setTimeout(() => {
