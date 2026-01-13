@@ -170,7 +170,7 @@ export function waitForVoices(callback: () => void): () => void {
   };
 }
 
-// Global reference to current audio instance to prevent overlap
+// Global reference to current audio instance (for tracking only, not canceling)
 let currentAudioInstance: HTMLAudioElement | null = null;
 
 /**
@@ -190,13 +190,8 @@ export async function speakWithEdgeTTS(
   onError?: (error: Error) => void
 ): Promise<() => void> {
   try {
-    // CRITICAL: Cancel any existing audio before starting new one
-    if (currentAudioInstance) {
-      console.log("🛑 Stopping previous audio to prevent overlap");
-      currentAudioInstance.pause();
-      currentAudioInstance.currentTime = 0;
-      currentAudioInstance = null;
-    }
+    // Note: We don't cancel previous audio here - let it finish naturally
+    // The queue system in VoiceCall.tsx ensures only one plays at a time
     
     // Try Edge TTS first (FREE, no API key needed!)
     const response = await fetch("/api/tts", {
@@ -294,30 +289,27 @@ function speakWithBrowserTTS(
   onEnd?: () => void,
   onError?: (error: Error) => void
 ): () => void {
-  // CRITICAL: Cancel any existing speech before starting new one
-  window.speechSynthesis.cancel();
+  // Note: We don't cancel previous speech here - let it finish naturally
+  // The queue system in VoiceCall.tsx ensures only one plays at a time
   
-  // Small delay to ensure previous speech is fully canceled
-  setTimeout(() => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    configureFemaleVoice(utterance);
+  const utterance = new SpeechSynthesisUtterance(text);
+  configureFemaleVoice(utterance);
 
-    if (onStart) {
-      utterance.onstart = onStart;
-    }
+  if (onStart) {
+    utterance.onstart = onStart;
+  }
 
-    if (onEnd) {
-      utterance.onend = onEnd;
-    }
+  if (onEnd) {
+    utterance.onend = onEnd;
+  }
 
-    if (onError) {
-      utterance.onerror = (event) => {
-        onError(new Error("Speech synthesis failed"));
-      };
-    }
+  if (onError) {
+    utterance.onerror = (event) => {
+      onError(new Error("Speech synthesis failed"));
+    };
+  }
 
-    window.speechSynthesis.speak(utterance);
-  }, 50); // Small delay to ensure cleanup
+  window.speechSynthesis.speak(utterance);
 
   // Return cancel function
   return () => {

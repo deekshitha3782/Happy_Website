@@ -43,6 +43,7 @@ export default function VoiceCall() {
   const wakeLockRef = useRef<any>(null); // Wake Lock to prevent screen timeout
   const currentTTSRef = useRef<(() => void) | null>(null); // Track current TTS instance to cancel if needed
   const isTTSPlayingRef = useRef<boolean>(false); // Track if TTS is currently playing
+  const ttsQueueRef = useRef<Array<{ id: number; content: string }>>([]); // Queue for TTS messages
 
   // Detect device/browser type
   const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -451,80 +452,90 @@ export default function VoiceCall() {
           };
   }, [sendMessage, isMuted]);
 
-  // Voice Output (TTS) with Google Cloud TTS (consistent voice) or browser TTS fallback
-  useEffect(() => {
-    if (!isSpeakerOn || !messages) return;
+  // Function to process TTS queue - plays next message if queue is not empty
+  const processTTSQueue = () => {
+    // If already playing, don't start new one
+    if (isTTSPlayingRef.current) {
+      console.log("⏸️ TTS already playing - waiting for current to finish");
+      return;
+    }
 
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage && lastMessage.role === "assistant" && lastMessage.id !== lastReadMessageId.current) {
-      // CRITICAL: Cancel any existing TTS before starting new one
-      if (currentTTSRef.current) {
-        console.log("🛑 Canceling previous TTS to prevent overlap");
-        currentTTSRef.current();
-        currentTTSRef.current = null;
-      }
-      if (isTTSPlayingRef.current) {
-        console.log("🛑 Stopping overlapping TTS");
-        window.speechSynthesis.cancel();
-        isTTSPlayingRef.current = false;
-      }
-      
-      // Store AI message to filter echo (keep last 3 AI messages)
-      recentAIMessagesRef.current.push(lastMessage.content.toLowerCase());
-      if (recentAIMessagesRef.current.length > 3) {
-        recentAIMessagesRef.current.shift(); // Keep only last 3
-      }
-      
-      // Cancel any ongoing speech before starting new one
-      window.speechSynthesis.cancel();
-      
-      // CRITICAL: TURN MIC OFF when AI starts speaking - FORCE STOP and PREVENT RESTART
-      isAISpeakingRef.current = true; // Mark AI as speaking
-      isTTSPlayingRef.current = true; // Mark TTS as playing
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-          recognitionRef.current.abort(); // Force stop completely
-          setIsListening(false);
-          console.log("🔇 Mic COMPLETELY OFF - AI is speaking (no input will be accepted)");
-        } catch (e) {
-          console.log("Could not stop recognition:", e);
-        }
-      }
-      // Clear any pending transcripts
-      setTranscript("");
+    // Check if there's a message in queue
+    if (ttsQueueRef.current.length === 0) {
+      console.log("✅ TTS queue empty - all messages played");
+      return;
+    }
 
-      // Use Edge TTS (FREE, consistent voice) with browser TTS fallback
-      speakWithEdgeTTS(
-        lastMessage.content,
-        () => {
-          // onStart - Speech started - ensure mic is off
-          isAISpeakingRef.current = true;
-          isTTSPlayingRef.current = true;
-          console.log("🔊 TTS started - only one voice should be playing");
-          if (recognitionRef.current && isListening) {
-            try {
-              recognitionRef.current.stop();
-              recognitionRef.current.abort();
-              setIsListening(false);
-            } catch (e) {
-              // Ignore errors
-            }
+    // Get next message from queue
+    const nextMessage = ttsQueueRef.current.shift();
+    if (!nextMessage) return;
+
+    console.log(`🔊 Playing queued TTS message (ID: ${nextMessage.id})`);
+    
+    // Store AI message to filter echo (keep last 3 AI messages)
+    recentAIMessagesRef.current.push(nextMessage.content.toLowerCase());
+    if (recentAIMessagesRef.current.length > 3) {
+      recentAIMessagesRef.current.shift(); // Keep only last 3
+    }
+    
+    // CRITICAL: TURN MIC OFF when AI starts speaking - FORCE STOP and PREVENT RESTART
+    isAISpeakingRef.current = true; // Mark AI as speaking
+    isTTSPlayingRef.current = true; // Mark TTS as playing
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+        recognitionRef.current.abort(); // Force stop completely
+        setIsListening(false);
+        console.log("🔇 Mic COMPLETELY OFF - AI is speaking (no input will be accepted)");
+      } catch (e) {
+        console.log("Could not stop recognition:", e);
+      }
+    }
+    // Clear any pending transcripts
+    setTranscript("");
+
+    // Use Edge TTS (FREE, consistent voice) with browser TTS fallback
+    speakWithEdgeTTS(
+      nextMessage.content,
+      () => {
+        // onStart - Speech started - ensure mic is off
+        isAISpeakingRef.current = true;
+        isTTSPlayingRef.current = true;
+        console.log("🔊 TTS started - playing message from queue");
+        if (recognitionRef.current && isListening) {
+          try {
+            recognitionRef.current.stop();
+            recognitionRef.current.abort();
+            setIsListening(false);
+          } catch (e) {
+            // Ignore errors
           }
-        },
-        () => {
-          // onEnd - Speech ended - TURN MIC BACK ON
+        }
+      },
+      () => {
+        // onEnd - Speech ended - process next in queue or turn mic back on
+        isTTSPlayingRef.current = false; // Mark TTS as finished
+        currentTTSRef.current = null; // Clear TTS reference
+        console.log("🔇 TTS finished - checking queue for next message");
+        
+        // Process next message in queue if any
+        if (ttsQueueRef.current.length > 0) {
+          console.log(`📋 Queue has ${ttsQueueRef.current.length} message(s) - playing next`);
+          // Small delay before next message
+          setTimeout(() => {
+            processTTSQueue();
+          }, 300);
+        } else {
+          // Queue is empty - TURN MIC BACK ON
           isAISpeakingRef.current = false; // Mark AI as finished
-          isTTSPlayingRef.current = false; // Mark TTS as finished
-          currentTTSRef.current = null; // Clear TTS reference
-          console.log("🔇 TTS finished - mic can turn back on");
+          console.log("✅ All TTS messages complete - mic can turn back on");
           if (recognitionRef.current && !isMuted) {
             setTimeout(() => {
               if (!isAISpeakingRef.current && recognitionRef.current && !isMuted) {
                 try {
                   recognitionRef.current.start();
                   setIsListening(true);
-                  console.log("🎤 Mic turned back on - AI finished speaking");
+                  console.log("🎤 Mic turned back on - all AI messages finished");
                 } catch (e: any) {
                   console.log("Could not restart recognition:", e.message);
                   setCallStatus("Reconnecting...");
@@ -542,13 +553,22 @@ export default function VoiceCall() {
               }
             }, 500); // Delay before restarting
           }
-        },
-        () => {
-          // onError - Speech was interrupted - TURN MIC BACK ON
+        }
+      },
+      () => {
+        // onError - Speech was interrupted - process next or turn mic back on
+        isTTSPlayingRef.current = false; // Mark TTS as finished
+        currentTTSRef.current = null; // Clear TTS reference
+        console.log("❌ TTS error - checking queue");
+        
+        // Process next message in queue if any
+        if (ttsQueueRef.current.length > 0) {
+          setTimeout(() => {
+            processTTSQueue();
+          }, 300);
+        } else {
+          // Queue is empty - TURN MIC BACK ON
           isAISpeakingRef.current = false; // Mark AI as finished
-          isTTSPlayingRef.current = false; // Mark TTS as finished
-          currentTTSRef.current = null; // Clear TTS reference
-          console.log("❌ TTS error - mic can turn back on");
           if (recognitionRef.current && !isMuted) {
             setTimeout(() => {
               if (!isAISpeakingRef.current && recognitionRef.current && !isMuted) {
@@ -573,26 +593,57 @@ export default function VoiceCall() {
             }, 500);
           }
         }
-      ).then((cancelFn) => {
-        // Store cancel function so we can cancel if new TTS starts
-        currentTTSRef.current = cancelFn;
+      }
+    ).then((cancelFn) => {
+      // Store cancel function
+      currentTTSRef.current = cancelFn;
+    });
+  };
+
+  // Voice Output (TTS) with queue system - ensures one voice at a time
+  useEffect(() => {
+    if (!isSpeakerOn || !messages) return;
+
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.role === "assistant" && lastMessage.id !== lastReadMessageId.current) {
+      // Check if this message is already in queue or currently playing
+      const isAlreadyQueued = ttsQueueRef.current.some(msg => msg.id === lastMessage.id);
+      const isCurrentlyPlaying = isTTSPlayingRef.current && lastReadMessageId.current === lastMessage.id;
+      
+      if (isAlreadyQueued || isCurrentlyPlaying) {
+        console.log(`⏭️ Message ${lastMessage.id} already queued or playing - skipping`);
+        return;
+      }
+
+      // Add to queue
+      console.log(`📋 Adding message ${lastMessage.id} to TTS queue (queue length: ${ttsQueueRef.current.length})`);
+      ttsQueueRef.current.push({
+        id: lastMessage.id,
+        content: lastMessage.content
       });
 
+      // Update last read message ID
       lastReadMessageId.current = lastMessage.id;
 
-      // Return cleanup function
-      return () => {
-        // Cancel TTS if component unmounts or effect re-runs
-        if (currentTTSRef.current) {
-          console.log("🧹 Cleanup: Canceling TTS");
-          currentTTSRef.current();
-          currentTTSRef.current = null;
-        }
-        window.speechSynthesis.cancel();
-        isTTSPlayingRef.current = false;
-      };
+      // Process queue (will only play if nothing is currently playing)
+      processTTSQueue();
     }
   }, [messages, isSpeakerOn, isListening, isMuted]);
+
+  // Cleanup function for TTS
+  useEffect(() => {
+    return () => {
+      // Cancel TTS if component unmounts
+      if (currentTTSRef.current) {
+        console.log("🧹 Cleanup: Canceling TTS");
+        currentTTSRef.current();
+        currentTTSRef.current = null;
+      }
+      window.speechSynthesis.cancel();
+      isTTSPlayingRef.current = false;
+      ttsQueueRef.current = []; // Clear queue on unmount
+    };
+  }, []);
   
   // Monitor for user speech and interrupt AI immediately
   useEffect(() => {
