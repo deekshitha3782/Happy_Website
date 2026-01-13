@@ -105,19 +105,18 @@ export default function VoiceCall() {
 
   // Initialize Speech Recognition with mobile support
   useEffect(() => {
-    // Check for iOS Safari - doesn't support Web Speech API
-    if (isIOSSafari && isSafari) {
-      setCallStatus("iOS Safari doesn't support voice calls. Please use Chrome or Firefox on iOS.");
-      console.error("iOS Safari doesn't support Web Speech API");
-      return;
-    }
-
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
     
     if (!SpeechRecognition) {
       setCallStatus("Speech recognition not supported in this browser. Try Chrome or Firefox.");
       console.error("Speech Recognition API not available");
       return;
+    }
+
+    // iOS Safari requires user interaction to start - don't auto-start
+    if (isIOSSafari && isSafari) {
+      setCallStatus("Tap 'Start Listening' to begin (iOS Safari requires user interaction)");
+      console.log("ℹ️ iOS Safari detected - will start on button click (user interaction required)");
     }
 
     // SIMPLIFIED: Don't request getUserMedia separately
@@ -137,7 +136,12 @@ export default function VoiceCall() {
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
-      // Don't set lang explicitly - let browser use default (works better on mobile)
+      
+      // iOS Safari: Set language explicitly for better compatibility
+      if (isIOSSafari || isMobile) {
+        recognitionRef.current.lang = 'en-US';
+      }
+      // Don't set lang explicitly for desktop - let browser use default
       
       console.log("🎤 Speech recognition configured (same as chat recording):", {
         continuous: recognitionRef.current.continuous,
@@ -149,7 +153,7 @@ export default function VoiceCall() {
         setCallStatus("Connected");
         setIsListening(true);
         console.log("✅ Speech recognition started - listening continuously");
-        console.log("📱 Device info:", { isMobile, userAgent: navigator.userAgent.substring(0, 50) });
+        console.log("📱 Device info:", { isMobile, isIOSSafari, isSafari, userAgent: navigator.userAgent.substring(0, 50) });
       };
 
       recognitionRef.current.onerror = (event: any) => {
@@ -341,6 +345,25 @@ export default function VoiceCall() {
 
     // Initialize on mount
     initSpeechRecognition();
+
+    // iOS Safari: Don't auto-start (requires user interaction)
+    // Desktop/Mobile Chrome/Firefox: Auto-start if not muted
+    if (!isIOSSafari && !isMuted) {
+      // Auto-start for non-iOS Safari browsers
+      setTimeout(() => {
+        if (recognitionRef.current && !isMuted) {
+          try {
+            recognitionRef.current.start();
+          } catch (e: any) {
+            console.log("Auto-start failed (will show button):", e.message);
+            setCallStatus("Tap 'Start Listening' to begin");
+          }
+        }
+      }, 500);
+    } else if (isIOSSafari) {
+      // iOS Safari: Always show button (user interaction required)
+      setCallStatus("Tap 'Start Listening' to begin");
+    }
 
           return () => {
             // Complete cleanup when component unmounts or dependencies change
@@ -596,14 +619,14 @@ export default function VoiceCall() {
           {callStatus}
         </motion.p>
         {(!callStatus.includes("Connected") && 
-          !callStatus.includes("iOS Safari") && 
           !callStatus.includes("not supported") &&
           (callStatus.includes("Tap") || 
            callStatus.includes("Start Listening") || 
            callStatus.includes("Failed") ||
            callStatus.includes("Connecting") ||
            callStatus.includes("permission") ||
-           (isMobile && !isListening && callStatus !== "Connected"))) ? (
+           (isMobile && !isListening && callStatus !== "Connected") ||
+           (isIOSSafari && !isListening))) ? (
           <button
             onClick={handleStartListening}
             className="mt-2 px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors touch-manipulation shadow-lg active:scale-95"
