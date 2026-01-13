@@ -223,17 +223,6 @@ export async function speakWithEdgeTTS(
     // Note: We don't cancel previous audio here - let it finish naturally
     // The queue system in VoiceCall.tsx ensures only one plays at a time
     
-    // iOS Chrome detection - Audio element is unreliable on iOS Chrome
-    // Prefer browser TTS for iOS Chrome to ensure audio is heard
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    const isIOSChrome = isIOS && /CriOS|Chrome/.test(navigator.userAgent);
-    
-    // For iOS Chrome, use browser TTS directly (more reliable than Audio element)
-    if (isIOSChrome) {
-      console.log("📱 iOS Chrome detected - using browser TTS for reliable audio playback");
-      return speakWithBrowserTTS(text, onStart, onEnd, onError);
-    }
-    
     // Try Edge TTS first (FREE, no API key needed!)
     const response = await fetch("/api/tts", {
       method: "POST",
@@ -266,25 +255,14 @@ export async function speakWithEdgeTTS(
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
     
-    // Note: isIOS and isIOSChrome are already declared at the top of the function
+    // iOS Safari requires specific handling for audio playback
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    
     // Set audio properties for iOS compatibility
     audio.preload = "auto";
-    audio.volume = 1.0; // Ensure full volume on iOS
-    
-    // iOS-specific settings for reliable playback through speaker
     if (isIOS) {
       // iOS requires these settings for reliable playback
       (audio as any).webkitAudioContext = true;
-      
-      // For iOS Chrome specifically, ensure audio plays through speaker
-      if (isIOSChrome) {
-        // Set playsInline to false to allow full-screen audio (important for speaker output)
-        (audio as any).playsInline = false;
-        // Ensure audio is not muted
-        audio.muted = false;
-        // Set volume explicitly
-        audio.volume = 1.0;
-      }
     }
     
     // Store as current instance
@@ -294,26 +272,6 @@ export async function speakWithEdgeTTS(
     let playAttempted = false;
 
     // Load audio first (required for iOS)
-    // For iOS Chrome, we need to ensure audio context is active
-    if (isIOSChrome) {
-      // Create a user interaction context for iOS Chrome
-      // This helps ensure audio plays through speaker
-      try {
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioContext) {
-          const audioContext = new AudioContext();
-          // Resume audio context if suspended (iOS requirement)
-          if (audioContext.state === 'suspended') {
-            audioContext.resume().catch((e) => {
-              console.log("Could not resume audio context:", e);
-            });
-          }
-        }
-      } catch (e) {
-        console.log("AudioContext not available:", e);
-      }
-    }
-    
     audio.load();
 
     audio.onplay = () => {
@@ -343,49 +301,21 @@ export async function speakWithEdgeTTS(
     let browserTTSCancel: (() => void) | null = null;
     let usingBrowserTTS = false;
     
-    const playAudio = async () => {
+    const playAudio = () => {
       if (playAttempted || cancelled) return;
       playAttempted = true;
-      
-      // For iOS Chrome, ensure audio context is active before playing
-      if (isIOSChrome) {
-        try {
-          const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-          if (AudioContext) {
-            const audioContext = new AudioContext();
-            if (audioContext.state === 'suspended') {
-              await audioContext.resume();
-              console.log("✅ iOS Chrome: Audio context resumed");
-            }
-          }
-        } catch (e) {
-          console.log("Could not resume audio context:", e);
-        }
-        
-        // Ensure volume is set to maximum for iOS Chrome
-        audio.volume = 1.0;
-        audio.muted = false;
-      }
       
       const playPromise = audio.play();
       
       if (playPromise !== undefined) {
-        playPromise.then(() => {
-          console.log("✅ Audio playing successfully on iOS Chrome");
-          // Double-check volume after play starts
-          if (isIOSChrome) {
-            audio.volume = 1.0;
-            audio.muted = false;
-          }
-        }).catch((error) => {
+        playPromise.catch((error) => {
           console.error("❌ Audio play() failed:", error);
           if (currentAudioInstance === audio) {
             currentAudioInstance = null;
           }
           // iOS might block autoplay - fallback to browser TTS
-          // For iOS Chrome, be more aggressive about falling back to browser TTS
-          if (isIOS && (error.name === 'NotAllowedError' || error.name === 'NotSupportedError' || isIOSChrome)) {
-            console.log(`🔄 iOS ${isIOSChrome ? 'Chrome' : ''} audio blocked/failed, falling back to browser TTS`);
+          if (isIOS && (error.name === 'NotAllowedError' || error.name === 'NotSupportedError')) {
+            console.log("🔄 iOS blocked audio autoplay, falling back to browser TTS");
             URL.revokeObjectURL(audioUrl);
             if (currentAudioInstance === audio) {
               currentAudioInstance = null;
@@ -394,7 +324,6 @@ export async function speakWithEdgeTTS(
             usingBrowserTTS = true;
             speakWithBrowserTTS(text, onStart, onEnd, onError).then((cancelFn) => {
               browserTTSCancel = cancelFn;
-              console.log("✅ iOS Chrome: Using browser TTS successfully");
             }).catch((err) => {
               console.error("Browser TTS also failed:", err);
               if (!cancelled && onError) {
@@ -410,39 +339,13 @@ export async function speakWithEdgeTTS(
 
     // For iOS, wait for audio to be ready
     if (isIOS) {
-      // iOS Chrome needs special handling - try multiple events
-      if (isIOSChrome) {
-        // Try canplaythrough first
-        audio.addEventListener('canplaythrough', () => {
-          console.log("📱 iOS Chrome: Audio can play through");
+      audio.addEventListener('canplaythrough', playAudio, { once: true });
+      // Fallback: try playing after a short delay
+      setTimeout(() => {
+        if (!playAttempted && !cancelled) {
           playAudio();
-        }, { once: true });
-        
-        // Also try loadeddata as fallback
-        audio.addEventListener('loadeddata', () => {
-          console.log("📱 iOS Chrome: Audio data loaded");
-          if (!playAttempted && !cancelled) {
-            setTimeout(() => playAudio(), 50);
-          }
-        }, { once: true });
-        
-        // Fallback: try playing after a delay
-        setTimeout(() => {
-          if (!playAttempted && !cancelled) {
-            console.log("📱 iOS Chrome: Attempting delayed play");
-            playAudio();
-          }
-        }, 200);
-      } else {
-        // Regular iOS Safari handling
-        audio.addEventListener('canplaythrough', playAudio, { once: true });
-        // Fallback: try playing after a short delay
-        setTimeout(() => {
-          if (!playAttempted && !cancelled) {
-            playAudio();
-          }
-        }, 100);
-      }
+        }
+      }, 100);
     } else {
       // For other browsers, play immediately
       playAudio();
