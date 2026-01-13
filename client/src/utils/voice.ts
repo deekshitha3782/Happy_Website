@@ -266,10 +266,7 @@ export async function speakWithEdgeTTS(
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
     
-    // iOS detection (Safari, Chrome, etc.)
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    const isIOSChrome = isIOS && /CriOS|Chrome/.test(navigator.userAgent);
-    
+    // Note: isIOS and isIOSChrome are already declared at the top of the function
     // Set audio properties for iOS compatibility
     audio.preload = "auto";
     audio.volume = 1.0; // Ensure full volume on iOS
