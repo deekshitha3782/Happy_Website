@@ -34,6 +34,7 @@ async function migrate() {
           role TEXT NOT NULL,
           content TEXT NOT NULL,
           session_type TEXT DEFAULT 'chat',
+          device_id TEXT,
           created_at TIMESTAMP DEFAULT NOW()
         );
       `);
@@ -60,6 +61,26 @@ async function migrate() {
         console.log("✓ Added session_type column");
       } else {
         console.log("✓ session_type column already exists");
+      }
+      
+      // Check if device_id column exists and add it if missing
+      const deviceIdCheck = await pool.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'messages' AND column_name = 'device_id'
+        );
+      `);
+      
+      const deviceIdExists = deviceIdCheck.rows[0]?.exists;
+      
+      if (!deviceIdExists) {
+        console.log("Adding device_id column to existing messages table...");
+        await pool.query(`
+          ALTER TABLE messages ADD COLUMN device_id TEXT;
+        `);
+        console.log("✓ Added device_id column");
+      } else {
+        console.log("✓ device_id column already exists");
       }
     }
   } catch (error) {

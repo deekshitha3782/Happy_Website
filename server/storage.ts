@@ -3,21 +3,23 @@ import { db } from "./db";
 import { eq, asc } from "drizzle-orm";
 
 export interface IStorage {
-  getMessages(sessionType?: string): Promise<Message[]>;
+  getMessages(sessionType?: string, deviceId?: string): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
-  clearMessages(sessionType?: string): Promise<void>;
+  clearMessages(sessionType?: string, deviceId?: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
-  async getMessages(sessionType?: string): Promise<Message[]> {
+  async getMessages(sessionType?: string, deviceId?: string): Promise<Message[]> {
     try {
       let result;
       if (sessionType) {
-        // Filter by session type (chat or call)
+        // Filter by session type (chat or call) and optionally deviceId
+        // sessionType now includes deviceId (e.g., "call-device-abc123")
+        // This ensures each device has separate conversations
         result = await db.select().from(messages)
           .where(eq(messages.sessionType, sessionType))
           .orderBy(asc(messages.createdAt));
-        console.log(`DatabaseStorage.getMessages: Retrieved ${result.length} messages for session type: ${sessionType}`);
+        console.log(`DatabaseStorage.getMessages: Retrieved ${result.length} messages for session: ${sessionType}`);
       } else {
         // Get all messages (backward compatibility)
         result = await db.select().from(messages).orderBy(asc(messages.createdAt));
@@ -50,12 +52,13 @@ export class DatabaseStorage implements IStorage {
     }
   }
   
-  async clearMessages(sessionType?: string): Promise<void> {
+  async clearMessages(sessionType?: string, deviceId?: string): Promise<void> {
     try {
       if (sessionType) {
-        // Clear only messages for this session type
+        // Clear only messages for this session (which includes deviceId)
+        // sessionType now includes deviceId (e.g., "call-device-abc123")
         await db.delete(messages).where(eq(messages.sessionType, sessionType));
-        console.log(`DatabaseStorage.clearMessages: Cleared messages for session type: ${sessionType}`);
+        console.log(`DatabaseStorage.clearMessages: Cleared messages for session: ${sessionType}`);
       } else {
         // Clear all messages (backward compatibility)
         await db.delete(messages);

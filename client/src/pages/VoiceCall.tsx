@@ -6,6 +6,7 @@ import { useMessages, useSendMessage, useClearChat } from "@/hooks/use-messages"
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { speakWithEdgeTTS } from "@/utils/voice";
+import { getDeviceId } from "@/utils/deviceId";
 
 // Helper function to calculate similarity between two strings (for echo detection)
 function calculateSimilarity(str1: string, str2: string): number {
@@ -21,9 +22,14 @@ function calculateSimilarity(str1: string, str2: string): number {
 
 export default function VoiceCall() {
   const [, setLocation] = useLocation();
-  const { data: messages } = useMessages("call"); // Use "call" session type
-  const { mutate: sendMessage, isPending: isSending } = useSendMessage("call"); // Use "call" session type
-  const { mutate: clearChat } = useClearChat("call"); // Use "call" session type
+  
+  // Get unique device ID for session separation
+  const deviceIdRef = useRef<string>(getDeviceId());
+  const sessionId = `call-${deviceIdRef.current}`; // Unique session per device
+  
+  const { data: messages } = useMessages(sessionId); // Use device-specific session
+  const { mutate: sendMessage, isPending: isSending } = useSendMessage(sessionId); // Use device-specific session
+  const { mutate: clearChat } = useClearChat(sessionId); // Use device-specific session
   
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -46,26 +52,22 @@ export default function VoiceCall() {
   const ttsQueueRef = useRef<Array<{ id: number; content: string }>>([]); // Queue for TTS messages
 
   // Detect device/browser type
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-  const isIOSSafari = isIOS && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  const isIOSChrome = isIOS && /CriOS|FxiOS/i.test(navigator.userAgent); // iOS Chrome or Firefox
+  const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-      // Enhanced iOS debugging (helps when testing remotely)
-      useEffect(() => {
-        console.log("📱 Device Detection:", {
-          isIOS,
-          isIOSSafari,
-          isIOSChrome,
-          isSafari,
-          isMobile,
-          userAgent: navigator.userAgent,
-          platform: navigator.platform,
-          hasSpeechRecognition: !!(window as any).webkitSpeechRecognition || !!(window as any).SpeechRecognition,
-          hasWakeLock: 'wakeLock' in navigator,
-        });
-      }, [isIOS, isIOSSafari, isIOSChrome, isSafari, isMobile]);
+  // Enhanced iOS debugging (helps when testing remotely)
+  useEffect(() => {
+    console.log("📱 Device Detection:", {
+      isIOSSafari,
+      isSafari,
+      isMobile,
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      hasSpeechRecognition: !!(window as any).webkitSpeechRecognition || !!(window as any).SpeechRecognition,
+      hasWakeLock: 'wakeLock' in navigator,
+    });
+  }, [isIOSSafari, isSafari, isMobile]);
 
   // Wake Lock API - Prevent screen timeout (like commercial AI agents)
   useEffect(() => {
@@ -110,7 +112,7 @@ export default function VoiceCall() {
             // AI will respond with simple greeting
             setTimeout(() => {
               sendMessage(
-                { role: "user", content: "start", sessionType: "call" } as any,
+                { role: "user", content: "start", sessionType: sessionId } as any,
                 {
                   onSuccess: () => {
                     // The AI will generate the initial greeting
@@ -133,10 +135,8 @@ export default function VoiceCall() {
       return;
     }
 
-    // iOS Chrome/Safari: Need special handling
-    if (isIOSChrome) {
-      console.log("ℹ️ iOS Chrome detected - may need user interaction to start");
-    } else if (isIOSSafari && isSafari) {
+    // iOS Safari: Will try to auto-start (may require user interaction)
+    if (isIOSSafari && isSafari) {
       console.log("ℹ️ iOS Safari detected - attempting auto-start");
     }
 
@@ -158,12 +158,8 @@ export default function VoiceCall() {
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
       
-      // Set language - iOS Chrome sometimes needs en-US for better compatibility
-      if (isIOSChrome) {
-        // iOS Chrome: Try en-US first (more reliable), fallback to en-IN
-        recognitionRef.current.lang = 'en-US';
-        console.log("🌐 iOS Chrome: Using en-US for better compatibility");
-      } else if (isIOSSafari || isMobile) {
+      // Set language to Indian English for better accent matching
+      if (isIOSSafari || isMobile) {
         recognitionRef.current.lang = 'en-IN'; // Indian English
       } else {
         recognitionRef.current.lang = 'en-IN'; // Indian English for all devices
@@ -179,7 +175,7 @@ export default function VoiceCall() {
         setCallStatus("Connected");
         setIsListening(true);
         console.log("✅ Speech recognition started - listening continuously");
-        console.log("📱 Device info:", { isMobile, isIOS, isIOSSafari, isIOSChrome, isSafari, userAgent: navigator.userAgent.substring(0, 50) });
+        console.log("📱 Device info:", { isMobile, isIOSSafari, isSafari, userAgent: navigator.userAgent.substring(0, 50) });
       };
 
       recognitionRef.current.onerror = (event: any) => {
@@ -323,7 +319,7 @@ export default function VoiceCall() {
               // Send to AI - accept single words and phrases
               console.log("✅ Sending input to AI:", toSend);
               lastSentMessageRef.current = toSend;
-              sendMessage({ role: "user", content: toSend, sessionType: "call" } as any);
+              sendMessage({ role: "user", content: toSend, sessionType: sessionId } as any);
               
               // Clear transcript after sending
               setTimeout(() => {
@@ -331,9 +327,9 @@ export default function VoiceCall() {
                 lastSentMessageRef.current = "";
               }, 1000);
             }
-          }, isIOSChrome ? 800 : (isMobile ? 600 : 400)); // iOS Chrome needs longer timeout
+          }, isMobile ? 600 : 400); // Shorter timeout for better responsiveness
           
-          console.log(`⏳ Waiting ${isIOSChrome ? 800 : (isMobile ? 600 : 400)}ms for more input, will send: "${trimmed}"`);
+          console.log(`⏳ Waiting ${isMobile ? 600 : 400}ms for more input, will send: "${trimmed}"`);
         }
       };
 
@@ -348,8 +344,6 @@ export default function VoiceCall() {
         
         // Auto-restart for continuous listening (only if AI is not speaking)
         if (!isMuted && recognitionRef.current && !isAISpeakingRef.current) {
-          // iOS Chrome: Needs longer delay before restart
-          const restartDelay = isIOSChrome ? 1500 : 500;
           setTimeout(() => {
             if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
               try {
@@ -360,8 +354,7 @@ export default function VoiceCall() {
                 console.log("Could not auto-restart:", e.message);
                 setIsListening(false);
                 setCallStatus("Reconnecting...");
-                // Auto-retry after delay (longer for iOS Chrome)
-                const retryDelay = isIOSChrome ? 3000 : 2000;
+                // Auto-retry after delay
                 setTimeout(() => {
                   if (recognitionRef.current && !isMuted) {
                     try {
@@ -370,10 +363,10 @@ export default function VoiceCall() {
                       console.log("Auto-retry failed:", retryError);
                     }
                   }
-                }, retryDelay);
+                }, 2000);
               }
             }
-          }, restartDelay);
+          }, 500);
         } else {
           setIsListening(false);
         }
@@ -409,38 +402,30 @@ export default function VoiceCall() {
     // Initialize on mount
     initSpeechRecognition();
 
-    // Auto-start for all browsers (including iOS Safari/Chrome - will try)
+    // Auto-start for all browsers (including iOS Safari - will try)
     if (!isMuted) {
-      // iOS Chrome: May need longer delay and user interaction
-      const startDelay = isIOSChrome ? 1000 : 500;
-      const retryDelay = isIOSChrome ? 2000 : 1000;
-      
       setTimeout(() => {
         if (recognitionRef.current && !isMuted) {
           try {
             recognitionRef.current.start();
             console.log("✅ Auto-starting speech recognition");
           } catch (e: any) {
-            console.log("Auto-start failed:", e.message, isIOSChrome ? "(iOS Chrome - may need user interaction)" : "");
+            console.log("Auto-start failed:", e.message);
             setCallStatus("Connecting...");
-            // Retry once after a delay (iOS Chrome may need more time)
+            // Retry once after a delay (iOS may need more time)
             setTimeout(() => {
               if (recognitionRef.current && !isMuted) {
                 try {
                   recognitionRef.current.start();
                 } catch (retryError: any) {
                   console.log("Retry failed:", retryError.message);
-                  if (isIOSChrome) {
-                    setCallStatus("Tap screen to enable microphone");
-                  } else {
-                    setCallStatus("Microphone permission needed");
-                  }
+                  setCallStatus("Microphone permission needed");
                 }
               }
-            }, retryDelay);
+            }, 1000);
           }
         }
-      }, startDelay);
+      }, 500);
     }
 
           return () => {

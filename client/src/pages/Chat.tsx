@@ -9,11 +9,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { speakWithEdgeTTS } from "@/utils/voice";
+import { getDeviceId } from "@/utils/deviceId";
 
 export default function Chat() {
-  const { data: messages, isLoading, error: messagesError } = useMessages("chat"); // Use "chat" session type
-  const { mutate: sendMessage, isPending: isSending, error: sendError } = useSendMessage("chat"); // Use "chat" session type
-  const { mutate: clearChat, isPending: isClearing } = useClearChat("chat"); // Use "chat" session type
+  // Get unique device ID for session separation
+  const deviceIdRef = useRef<string>(getDeviceId());
+  const sessionId = `chat-${deviceIdRef.current}`; // Unique session per device
+  
+  const { data: messages, isLoading, error: messagesError } = useMessages(sessionId); // Use device-specific session
+  const { mutate: sendMessage, isPending: isSending, error: sendError } = useSendMessage(sessionId); // Use device-specific session
+  const { mutate: clearChat, isPending: isClearing } = useClearChat(sessionId); // Use device-specific session
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
@@ -78,7 +83,7 @@ export default function Chat() {
 
   const handleSend = (content: string) => {
     sendMessage(
-      { role: "user", content, sessionType: "chat" } as any,
+      { role: "user", content, sessionType: sessionId } as any,
       {
         onError: (error: Error) => {
           console.error("Error sending message:", error);
@@ -109,9 +114,9 @@ export default function Chat() {
     if (!isVoiceEnabled) {
       // Small feedback that voice is now on with consistent female voice
       const cleanup = waitForVoices(() => {
-        const utterance = new SpeechSynthesisUtterance("Voice mode enabled");
+      const utterance = new SpeechSynthesisUtterance("Voice mode enabled");
         configureFemaleVoice(utterance);
-        window.speechSynthesis.speak(utterance);
+      window.speechSynthesis.speak(utterance);
       });
       // Note: cleanup will be called automatically when voices are loaded
     } else {
