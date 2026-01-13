@@ -371,6 +371,61 @@ function speakWithBrowserTTS(
   // Note: We don't cancel previous speech here - let it finish naturally
   // The queue system in VoiceCall.tsx ensures only one plays at a time
   
+  // iOS Detection for special handling
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  
+  // iOS: Ensure speechSynthesis is ready before speaking
+  if (isIOS) {
+    // Cancel any pending speech first (iOS requirement)
+    window.speechSynthesis.cancel();
+    
+    // Small delay to ensure cancel is processed (iOS quirk)
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      configureFemaleVoice(utterance);
+
+      if (onStart) {
+        utterance.onstart = onStart;
+      }
+
+      if (onEnd) {
+        utterance.onend = onEnd;
+      }
+
+      if (onError) {
+        utterance.onerror = (event) => {
+          console.error("❌ iOS TTS error:", event);
+          onError(new Error("Speech synthesis failed"));
+        };
+      }
+
+      // iOS: Ensure voices are loaded before speaking
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) {
+        // Wait for voices to load
+        const waitForVoices = () => {
+          const voices = window.speechSynthesis.getVoices();
+          if (voices.length > 0) {
+            window.speechSynthesis.speak(utterance);
+            console.log("✅ iOS TTS: Speaking with", voices.length, "voices available");
+          } else {
+            setTimeout(waitForVoices, 100);
+          }
+        };
+        waitForVoices();
+      } else {
+        window.speechSynthesis.speak(utterance);
+        console.log("✅ iOS TTS: Speaking immediately");
+      }
+    }, 50);
+    
+    // Return cancel function
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }
+  
+  // Non-iOS: Standard implementation
   const utterance = new SpeechSynthesisUtterance(text);
   configureFemaleVoice(utterance);
 

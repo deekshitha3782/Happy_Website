@@ -90,6 +90,57 @@ export default function VoiceCall() {
     };
   }, []);
 
+  // iOS TTS Initialization - "warm up" speechSynthesis on iOS for reliable playback
+  useEffect(() => {
+    if (isIOSSafari || (isMobile && /iPhone|iPad|iPod/.test(navigator.userAgent))) {
+      console.log("📱 iOS detected - initializing TTS engine");
+      
+      // iOS speechSynthesis needs to be "warmed up" before first use
+      // This ensures voices are loaded and TTS is ready
+      const warmUpTTS = () => {
+        try {
+          // Get voices to initialize the engine
+          const voices = window.speechSynthesis.getVoices();
+          console.log(`✅ iOS TTS initialized with ${voices.length} voices available`);
+          
+          // Create a silent utterance to "warm up" the engine (iOS requirement)
+          // This ensures speechSynthesis is ready when we actually need it
+          const warmUpUtterance = new SpeechSynthesisUtterance("");
+          warmUpUtterance.volume = 0;
+          warmUpUtterance.rate = 0.1;
+          
+          // Try to speak (silently) to initialize the engine
+          // This is a known workaround for iOS speechSynthesis initialization
+          window.speechSynthesis.speak(warmUpUtterance);
+          window.speechSynthesis.cancel(); // Cancel immediately
+          
+          console.log("✅ iOS TTS engine warmed up and ready");
+        } catch (e) {
+          console.log("⚠️ iOS TTS warm-up failed (may still work):", e);
+        }
+      };
+      
+      // Wait for voices to load, then warm up
+      if (window.speechSynthesis.getVoices().length > 0) {
+        warmUpTTS();
+      } else {
+        // Voices not loaded yet, wait for them
+        const checkVoices = setInterval(() => {
+          if (window.speechSynthesis.getVoices().length > 0) {
+            clearInterval(checkVoices);
+            warmUpTTS();
+          }
+        }, 100);
+        
+        // Timeout after 2 seconds
+        setTimeout(() => {
+          clearInterval(checkVoices);
+          warmUpTTS(); // Try anyway
+        }, 2000);
+      }
+    }
+  }, [isIOSSafari, isMobile]);
+
   // Stop any chat voice and clear chat when Call AI starts, then send greeting
   useEffect(() => {
     // Stop any ongoing speech from chat immediately
