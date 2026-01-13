@@ -195,9 +195,10 @@ export default function VoiceCall() {
         }
         
         // Try to restart if it's a recoverable error (keep connection alive)
-        if (event.error !== 'aborted' && event.error !== 'not-allowed' && event.error !== 'no-speech') {
+        // CRITICAL: NEVER restart if AI is speaking
+        if (event.error !== 'aborted' && event.error !== 'not-allowed' && event.error !== 'no-speech' && !isAISpeakingRef.current) {
           setTimeout(() => {
-            if (recognitionRef.current && !isMuted) {
+            if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
               try {
                 recognitionRef.current.start();
                 setCallStatus("Connected");
@@ -207,9 +208,9 @@ export default function VoiceCall() {
                 console.log("Could not restart recognition:", e);
                 setIsListening(false);
                 setCallStatus("Reconnecting...");
-                // Auto-retry after delay
+                // Auto-retry after delay (only if AI not speaking)
                 setTimeout(() => {
-                  if (recognitionRef.current && !isMuted) {
+                  if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
                     try {
                       recognitionRef.current.start();
                     } catch (retryError) {
@@ -220,6 +221,8 @@ export default function VoiceCall() {
               }
             }
           }, isMobile ? 1000 : 1500);
+        } else if (isAISpeakingRef.current) {
+          console.log("🔇 Error occurred but AI is speaking - NOT restarting mic");
         }
       };
 
