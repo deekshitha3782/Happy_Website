@@ -170,7 +170,6 @@ export default function VoiceCall() {
         setIsListening(true);
         console.log("✅ Speech recognition started - listening continuously");
         console.log("📱 Device info:", { isMobile, isIOSSafari, isSafari, userAgent: navigator.userAgent.substring(0, 50) });
-        // Note: System may play a sound when mic starts - this is iOS/browser behavior, cannot be disabled
       };
 
       recognitionRef.current.onerror = (event: any) => {
@@ -480,28 +479,40 @@ export default function VoiceCall() {
       recentAIMessagesRef.current.shift(); // Keep only last 3
     }
     
-    // CRITICAL: TURN MIC OFF when AI starts speaking - but keep recognition running to avoid system sounds
-      // Instead of stopping recognition (which causes system sounds), just ignore results
-      isAISpeakingRef.current = true; // Mark AI as speaking
-      isTTSPlayingRef.current = true; // Mark TTS as playing
-      // DON'T stop recognition - keep it running silently to avoid system sounds
-      // We'll just ignore all results in onresult handler
-      setIsListening(false); // Update UI only
-      console.log("🔇 Mic OFF (silent) - AI is speaking (recognition still running, results ignored to avoid system sounds)");
-      // Clear any pending transcripts
-      setTranscript("");
+    // CRITICAL: TURN MIC OFF when AI starts speaking - FORCE STOP and PREVENT RESTART
+    isAISpeakingRef.current = true; // Mark AI as speaking
+    isTTSPlayingRef.current = true; // Mark TTS as playing
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+        recognitionRef.current.abort(); // Force stop completely
+        setIsListening(false);
+        console.log("🔇 Mic COMPLETELY OFF - AI is speaking (no input will be accepted)");
+      } catch (e) {
+        console.log("Could not stop recognition:", e);
+      }
+    }
+    // Clear any pending transcripts
+    setTranscript("");
 
     // Use Edge TTS (FREE, consistent voice) with browser TTS fallback
     speakWithEdgeTTS(
       nextMessage.content,
-        () => {
-          // onStart - Speech started - ensure mic is off (silently)
-          isAISpeakingRef.current = true;
-          isTTSPlayingRef.current = true;
-          console.log("🔊 TTS started - playing message from queue");
-          // Don't stop recognition - just update UI to avoid system sounds
-          setIsListening(false); // Update UI only - recognition keeps running
-        },
+      () => {
+        // onStart - Speech started - ensure mic is off
+        isAISpeakingRef.current = true;
+        isTTSPlayingRef.current = true;
+        console.log("🔊 TTS started - playing message from queue");
+        if (recognitionRef.current && isListening) {
+          try {
+            recognitionRef.current.stop();
+            recognitionRef.current.abort();
+            setIsListening(false);
+          } catch (e) {
+            // Ignore errors
+          }
+        }
+      },
       () => {
         // onEnd - Speech ended - process next in queue or turn mic back on
         isTTSPlayingRef.current = false; // Mark TTS as finished
@@ -516,14 +527,32 @@ export default function VoiceCall() {
             processTTSQueue();
           }, 300);
         } else {
-          // Queue is empty - TURN MIC BACK ON (silently - recognition already running)
+          // Queue is empty - TURN MIC BACK ON
           isAISpeakingRef.current = false; // Mark AI as finished
-          console.log("✅ All TTS messages complete - mic can turn back on (silent - recognition already running)");
-          // Recognition is already running continuously, just update UI state
-          // No need to restart - this prevents system sounds
+          console.log("✅ All TTS messages complete - mic can turn back on");
           if (recognitionRef.current && !isMuted) {
-            setIsListening(true); // Just update UI - recognition never stopped
-            console.log("🎤 Mic back on (silent) - recognition was already running");
+            setTimeout(() => {
+              if (!isAISpeakingRef.current && recognitionRef.current && !isMuted) {
+                try {
+                  recognitionRef.current.start();
+                  setIsListening(true);
+                  console.log("🎤 Mic turned back on - all AI messages finished");
+                } catch (e: any) {
+                  console.log("Could not restart recognition:", e.message);
+                  setCallStatus("Reconnecting...");
+                  // Auto-retry after delay
+                  setTimeout(() => {
+                    if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
+                      try {
+                        recognitionRef.current.start();
+                      } catch (retryError) {
+                        console.log("Auto-retry failed:", retryError);
+                      }
+                    }
+                  }, 2000);
+                }
+              }
+            }, 500); // Delay before restarting
           }
         }
       },
@@ -539,12 +568,30 @@ export default function VoiceCall() {
             processTTSQueue();
           }, 300);
         } else {
-          // Queue is empty - TURN MIC BACK ON (silently - recognition already running)
+          // Queue is empty - TURN MIC BACK ON
           isAISpeakingRef.current = false; // Mark AI as finished
-          // Recognition is already running continuously, just update UI state
           if (recognitionRef.current && !isMuted) {
-            setIsListening(true); // Just update UI - recognition never stopped
-            console.log("🎤 Mic back on (silent) - AI speech interrupted, recognition was already running");
+            setTimeout(() => {
+              if (!isAISpeakingRef.current && recognitionRef.current && !isMuted) {
+                try {
+                  recognitionRef.current.start();
+                  setIsListening(true);
+                  console.log("🎤 Mic turned back on - AI speech interrupted");
+                } catch (e: any) {
+                  console.log("Could not restart recognition:", e.message);
+                  // Auto-retry after delay
+                  setTimeout(() => {
+                    if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
+                      try {
+                        recognitionRef.current.start();
+                      } catch (retryError) {
+                        console.log("Auto-retry failed:", retryError);
+                      }
+                    }
+                  }, 2000);
+                }
+              }
+            }, 500);
           }
         }
       }

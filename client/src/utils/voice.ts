@@ -78,42 +78,23 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
   // ALWAYS get fresh voice list to ensure consistency
   const voices = window.speechSynthesis.getVoices();
   
-  // Detect iOS for voice prioritization
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-  
-  // Priority list - iOS gets iOS-specific voices first, then Indian English, then others
+  // Priority list - try to find Indian English voices first, then fallback to others
   // These are common female voices that exist on multiple platforms
-  // Order matters: iOS voices first on iOS, Indian English first on others
-  const preferredVoices = isIOS
-    ? [
-        // iOS-specific voices (most reliable and smooth on iOS)
-        "Samantha",                      // iOS/macOS - very common, smooth female voice
-        "Karen",                         // iOS/macOS - calm female voice
-        "Moira",                         // iOS/macOS - gentle female voice
-        "Tessa",                         // iOS/macOS - soft female voice
-        "Victoria",                      // iOS/macOS - warm female voice
-        "Google India English Female",   // Chrome/Android - Indian accent (if available)
-        "Google IN English Female",      // Chrome/Android - Indian accent variant
-        "Google US English Female",      // Chrome/Android (fallback)
-        "Google UK English Female",      // Chrome/Android (fallback)
-        "Microsoft Zira",               // Windows (fallback)
-        "Microsoft Hazel",              // Windows (fallback)
-      ]
-    : [
-        // Non-iOS: Indian English first
-        "Google India English Female",   // Chrome/Android - Indian accent
-        "Google IN English Female",      // Chrome/Android - Indian accent variant
-        "Microsoft Ravi",                // Windows - Indian English (if available)
-        "Google US English Female",      // Chrome/Android (fallback)
-        "Google UK English Female",      // Chrome/Android (fallback)
-        "Microsoft Zira",               // Windows (fallback)
-        "Microsoft Hazel",              // Windows (fallback)
-        "Samantha",                      // macOS (fallback)
-        "Karen",                         // macOS (fallback)
-        "Moira",                         // macOS (fallback)
-        "Tessa",                         // macOS (fallback)
-        "Victoria",                      // macOS (fallback)
-      ];
+  // Order matters: try Indian English first, then others
+  const preferredVoices = [
+    "Google India English Female",   // Chrome/Android - Indian accent
+    "Google IN English Female",      // Chrome/Android - Indian accent variant
+    "Microsoft Ravi",                // Windows - Indian English (if available)
+    "Google US English Female",      // Chrome/Android (fallback)
+    "Google UK English Female",      // Chrome/Android (fallback)
+    "Microsoft Zira",               // Windows (fallback)
+    "Microsoft Hazel",              // Windows (fallback)
+    "Samantha",                      // macOS (fallback)
+    "Karen",                         // macOS (fallback)
+    "Moira",                         // macOS (fallback)
+    "Tessa",                         // macOS (fallback)
+    "Victoria",                      // macOS (fallback)
+  ];
   
   let selectedVoice: SpeechSynthesisVoice | null = null;
   
@@ -122,8 +103,8 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
     v.lang && (v.lang.toLowerCase() === 'en-in' || v.lang.toLowerCase().includes('in'))
   );
   
-  if (indianVoices.length > 0 && !isIOS) {
-    // Prefer female Indian voices (but not on iOS - iOS voices are better)
+  if (indianVoices.length > 0) {
+    // Prefer female Indian voices
     const indianFemaleVoice = indianVoices.find(v => 
       /female|woman|zira|ravi/i.test(v.name)
     ) || indianVoices[0];
@@ -134,13 +115,13 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
     }
   }
   
-  // If no Indian voice found (or on iOS), try preferred voices by exact name match
+  // If no Indian voice found, try preferred voices by exact name match
   if (!selectedVoice) {
     for (const preferredName of preferredVoices) {
       const voice = voices.find(v => v.name === preferredName);
       if (voice) {
         selectedVoice = voice;
-        console.log(`✅ Using preferred voice: ${voice.name} (${voice.lang || 'unknown lang'})${isIOS ? ' - iOS optimized' : ''}`);
+        console.log(`✅ Using preferred voice: ${voice.name} (${voice.lang || 'unknown lang'})`);
         break;
       }
     }
@@ -156,24 +137,23 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
   
   if (selectedVoice) {
     utterance.voice = selectedVoice;
-    // Set language to Indian English if voice supports it (or use voice's native language)
+    // Set language to Indian English if voice supports it
     if (selectedVoice.lang) {
       utterance.lang = selectedVoice.lang;
     } else {
-      utterance.lang = isIOS ? 'en-US' : 'en-IN'; // iOS voices typically use en-US
+      utterance.lang = 'en-IN'; // Default to Indian English
     }
   } else {
-    utterance.lang = isIOS ? 'en-US' : 'en-IN'; // Default based on platform
+    utterance.lang = 'en-IN'; // Default to Indian English if no voice selected
   }
   
   // CALMER, SMOOTHER, SWEETER voice settings
   // Optimized for a gentle, soothing, emotionally supportive experience
-  // Same settings for iOS and other devices - calm and smooth
-  utterance.rate = 0.75;   // Slower rate = calmer, more soothing
-  utterance.pitch = 0.95;  // Slightly lower pitch = sweeter, more gentle
-  utterance.volume = 0.9;   // Slightly softer volume = more calming
+  utterance.rate = 0.75;   // Slower rate = calmer, more soothing (was 0.9)
+  utterance.pitch = 0.95;  // Slightly lower pitch = sweeter, more gentle (was 1.0)
+  utterance.volume = 0.9;   // Slightly softer volume = more calming (was 0.95)
   
-  console.log(`🎤 Voice configured: ${selectedVoice?.name || 'default'} (${utterance.lang}), rate: ${utterance.rate}, pitch: ${utterance.pitch}, volume: ${utterance.volume} - Calm & Sweet${isIOS ? ' [iOS]' : ''}`);
+  console.log(`🎤 Voice configured: ${selectedVoice?.name || 'default'} (${utterance.lang}), rate: ${utterance.rate}, pitch: ${utterance.pitch}, volume: ${utterance.volume} - Calm & Sweet`);
 }
 
 /**
