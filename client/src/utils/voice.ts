@@ -407,6 +407,13 @@ function speakWithBrowserTTS(
         console.log(`✅ iOS: Using configured female voice: ${utterance.voice.name}`);
       }
 
+      // iOS-SPECIFIC: Make voice smoother and calmer (same as Android)
+      // These settings override the default configureFemaleVoice settings for iOS
+      utterance.rate = 0.75;   // Slower rate = calmer, more soothing
+      utterance.pitch = 0.95;  // Slightly lower pitch = sweeter, more gentle
+      utterance.volume = 0.9;   // Slightly softer volume = more calming
+      console.log(`🎤 iOS voice settings: rate: ${utterance.rate}, pitch: ${utterance.pitch}, volume: ${utterance.volume} - Smooth & Calm`);
+
       if (onStart) {
         utterance.onstart = onStart;
       }
