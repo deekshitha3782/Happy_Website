@@ -113,10 +113,9 @@ export default function VoiceCall() {
       return;
     }
 
-    // iOS Safari requires user interaction to start - don't auto-start
+    // iOS Safari: Will try to auto-start (may require user interaction)
     if (isIOSSafari && isSafari) {
-      setCallStatus("Tap 'Start Listening' to begin (iOS Safari requires user interaction)");
-      console.log("ℹ️ iOS Safari detected - will start on button click (user interaction required)");
+      console.log("ℹ️ iOS Safari detected - attempting auto-start");
     }
 
     // SIMPLIFIED: Don't request getUserMedia separately
@@ -194,7 +193,17 @@ export default function VoiceCall() {
               } catch (e) {
                 console.log("Could not restart recognition:", e);
                 setIsListening(false);
-                setCallStatus("Tap 'Start Listening' to reconnect");
+                setCallStatus("Reconnecting...");
+                // Auto-retry after delay
+                setTimeout(() => {
+                  if (recognitionRef.current && !isMuted) {
+                    try {
+                      recognitionRef.current.start();
+                    } catch (retryError) {
+                      console.log("Auto-retry failed:", retryError);
+                    }
+                  }
+                }, 2000);
               }
             }
           }, isMobile ? 1000 : 1500);
@@ -316,7 +325,17 @@ export default function VoiceCall() {
               } catch (e: any) {
                 console.log("Could not auto-restart:", e.message);
                 setIsListening(false);
-                setCallStatus("Tap 'Start Listening' to reconnect");
+                setCallStatus("Reconnecting...");
+                // Auto-retry after delay
+                setTimeout(() => {
+                  if (recognitionRef.current && !isMuted) {
+                    try {
+                      recognitionRef.current.start();
+                    } catch (retryError) {
+                      console.log("Auto-retry failed:", retryError);
+                    }
+                  }
+                }, 2000);
               }
             }
           }, 500);
@@ -334,10 +353,19 @@ export default function VoiceCall() {
             setCallStatus("Connecting...");
             console.log("✅ Auto-starting recognition");
           } catch (e: any) {
-            // Auto-start failed (common on mobile) - show button
-            // This is normal and expected on mobile browsers
-            console.log("Auto-start failed (normal on mobile):", e.message);
-            setCallStatus("Tap 'Start Listening' to begin");
+            // Auto-start failed - retry once
+            console.log("Auto-start failed, retrying:", e.message);
+            setCallStatus("Connecting...");
+            setTimeout(() => {
+              if (recognitionRef.current && !isMuted) {
+                try {
+                  recognitionRef.current.start();
+                } catch (retryError: any) {
+                  console.log("Retry failed:", retryError.message);
+                  setCallStatus("Microphone permission needed");
+                }
+              }
+            }, 1000);
           }
         }
       }, 500); // Simple delay - same for all devices
@@ -346,23 +374,30 @@ export default function VoiceCall() {
     // Initialize on mount
     initSpeechRecognition();
 
-    // iOS Safari: Don't auto-start (requires user interaction)
-    // Desktop/Mobile Chrome/Firefox: Auto-start if not muted
-    if (!isIOSSafari && !isMuted) {
-      // Auto-start for non-iOS Safari browsers
+    // Auto-start for all browsers (including iOS Safari - will try)
+    if (!isMuted) {
       setTimeout(() => {
         if (recognitionRef.current && !isMuted) {
           try {
             recognitionRef.current.start();
+            console.log("✅ Auto-starting speech recognition");
           } catch (e: any) {
-            console.log("Auto-start failed (will show button):", e.message);
-            setCallStatus("Tap 'Start Listening' to begin");
+            console.log("Auto-start failed:", e.message);
+            setCallStatus("Connecting...");
+            // Retry once after a delay (iOS may need more time)
+            setTimeout(() => {
+              if (recognitionRef.current && !isMuted) {
+                try {
+                  recognitionRef.current.start();
+                } catch (retryError: any) {
+                  console.log("Retry failed:", retryError.message);
+                  setCallStatus("Microphone permission needed");
+                }
+              }
+            }, 1000);
           }
         }
       }, 500);
-    } else if (isIOSSafari) {
-      // iOS Safari: Always show button (user interaction required)
-      setCallStatus("Tap 'Start Listening' to begin");
     }
 
           return () => {
@@ -454,7 +489,17 @@ export default function VoiceCall() {
                   console.log("🎤 Mic turned back on - AI finished speaking");
                 } catch (e: any) {
                   console.log("Could not restart recognition:", e.message);
-                  setCallStatus("Tap 'Start Listening' to reconnect");
+                  setCallStatus("Reconnecting...");
+                  // Auto-retry after delay
+                  setTimeout(() => {
+                    if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
+                      try {
+                        recognitionRef.current.start();
+                      } catch (retryError) {
+                        console.log("Auto-retry failed:", retryError);
+                      }
+                    }
+                  }, 2000);
                 }
               }
             }, 500); // Delay before restarting
@@ -472,6 +517,16 @@ export default function VoiceCall() {
                   console.log("🎤 Mic turned back on - AI speech interrupted");
                 } catch (e: any) {
                   console.log("Could not restart recognition:", e.message);
+                  // Auto-retry after delay
+                  setTimeout(() => {
+                    if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
+                      try {
+                        recognitionRef.current.start();
+                      } catch (retryError) {
+                        console.log("Auto-retry failed:", retryError);
+                      }
+                    }
+                  }, 2000);
                 }
               }
             }, 500);
@@ -502,33 +557,6 @@ export default function VoiceCall() {
     }
   }, [transcript]);
 
-  // SIMPLIFIED: Match chat recording's toggleRecording - simple start/stop
-  const handleStartListening = async () => {
-    // Same simple approach as chat recording - just start recognition
-    // Speech recognition will request permission automatically
-    if (!recognitionRef.current) {
-      setCallStatus("Speech recognition not initialized");
-      return;
-    }
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.start();
-        setCallStatus("Connecting...");
-        setIsListening(true);
-      } catch (e: any) {
-        console.error("Failed to start:", e);
-        if (e.message && e.message.includes('already started')) {
-          // Already running, that's fine
-          setCallStatus("Connected");
-        } else {
-          setCallStatus("Failed to start - check permissions");
-        }
-      }
-    } else {
-      setCallStatus("Speech recognition not initialized");
-    }
-  };
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
@@ -618,22 +646,6 @@ export default function VoiceCall() {
           )}
           {callStatus}
         </motion.p>
-        {(!callStatus.includes("Connected") && 
-          !callStatus.includes("not supported") &&
-          (callStatus.includes("Tap") || 
-           callStatus.includes("Start Listening") || 
-           callStatus.includes("Failed") ||
-           callStatus.includes("Connecting") ||
-           callStatus.includes("permission") ||
-           (isMobile && !isListening && callStatus !== "Connected") ||
-           (isIOSSafari && !isListening))) ? (
-          <button
-            onClick={handleStartListening}
-            className="mt-2 px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors touch-manipulation shadow-lg active:scale-95"
-          >
-            Start Listening
-          </button>
-        ) : null}
       </header>
 
       {/* Visualizer / Avatar */}
