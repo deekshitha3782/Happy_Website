@@ -271,7 +271,7 @@ export async function registerRoutes(
         systemContent = "You are a helpful and compassionate assistant. The user just started a conversation. Respond with EXACTLY this greeting and nothing else: 'Hi, how may I help you?' Do not add anything else, no questions, no extra words. Just that greeting.";
       } else {
         // Normal conversation - respond naturally but safely
-        systemContent = "You are a helpful and compassionate assistant. Respond naturally to the user's requests. You can tell jokes, have conversations, and help with various topics. CRITICAL SAFETY RULES: 1) NEVER provide methods, examples, or instructions on how to die, self-harm, or commit suicide. 2) If user asks about self-harm, immediately encourage professional help and provide crisis resources. 3) Keep responses to MAXIMUM 2 sentences - be concise and clear. 4) Responses should take less than 10 seconds to speak. Be warm, friendly, and helpful while maintaining safety.";
+        systemContent = "You are a helpful and compassionate assistant. Respond naturally to the user's requests. You can tell jokes, have conversations, and help with various topics. CRITICAL SAFETY RULES: 1) NEVER provide methods, examples, or instructions on how to die, self-harm, or commit suicide. 2) If user asks about self-harm, immediately encourage professional help and provide crisis resources. 3) Keep responses to MAXIMUM 2 sentences - be concise and clear. Be warm, friendly, and helpful while maintaining safety.";
       }
       
       const systemMessage = {
@@ -411,8 +411,7 @@ export async function registerRoutes(
         aiContent = generateFallbackResponse(input.content, history);
       }
 
-      // 5. Save assistant message with same session type
-      const sessionType = (req.body.sessionType as string) || "chat";
+      // 5. Save assistant message with same session type (reuse sessionType from line 250)
       const assistantMessage = await storage.createMessage({
         role: "assistant",
         content: aiContent,

@@ -106,18 +106,10 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
   }
   
   // CONSISTENT voice settings across all devices
-  // Rate set to ensure responses complete in under 10 seconds
-  utterance.rate = 1.0;   // Slightly faster to ensure 2 sentences complete in <10 seconds
+  // Natural speaking rate - no fast-forwarding
+  utterance.rate = 0.9;   // Natural, pleasant speaking rate (not fast-forwarded)
   utterance.pitch = 1.0;  // Same pitch on all devices
   utterance.volume = 0.95; // Same volume on all devices
-  
-  // Calculate estimated duration and adjust rate if needed
-  const estimatedDuration = (utterance.text.length / utterance.rate) * 0.1; // Rough estimate in seconds
-  if (estimatedDuration > 10) {
-    // If estimated > 10 seconds, increase rate to fit
-    utterance.rate = Math.max(1.2, utterance.text.length / 100);
-    console.log(`⚡ Adjusted rate to ${utterance.rate.toFixed(2)} to ensure <10 second response`);
-  }
   
   console.log(`🎤 Voice configured: ${selectedVoice?.name || 'default'}, rate: ${utterance.rate}, pitch: ${utterance.pitch}`);
 }
