@@ -626,36 +626,60 @@ export default function VoiceCall() {
       </header>
 
       {/* Visualizer / Avatar */}
-      <main className="relative flex items-center justify-center flex-1 min-h-0 w-full">
+      <main className="relative flex items-center justify-center flex-1 min-h-0 w-full z-10">
         <AnimatePresence>
           {isListening && (
             <>
               <motion.div
                 initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1.5, opacity: 0 }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
-                className="absolute w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 bg-primary/20 rounded-full"
+                animate={{ scale: [1, 1.8, 1.5], opacity: [0, 0.3, 0] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: "easeOut" }}
+                className="absolute w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 bg-gradient-to-r from-primary/30 to-blue-500/30 rounded-full blur-xl"
               />
               <motion.div
                 initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 2, opacity: 0 }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay: 0.5 }}
-                className="absolute w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 bg-primary/10 rounded-full"
+                animate={{ scale: [1, 2.2, 2], opacity: [0, 0.2, 0] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: "easeOut", delay: 0.3 }}
+                className="absolute w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 bg-gradient-to-r from-blue-500/20 to-primary/20 rounded-full blur-2xl"
+              />
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: [1, 1.6, 1.4], opacity: [0, 0.4, 0] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay: 0.6 }}
+                className="absolute w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 bg-primary/15 rounded-full"
               />
             </>
           )}
         </AnimatePresence>
         
-        <div className="relative w-36 h-36 sm:w-40 sm:h-40 md:w-48 md:h-48 bg-gradient-to-tr from-primary to-blue-400 rounded-full flex items-center justify-center shadow-2xl shadow-primary/20 z-10">
-          <HeartHandshake className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 text-white" />
+        <motion.div 
+          className="relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 bg-gradient-to-br from-primary via-blue-500 to-primary rounded-full flex items-center justify-center shadow-2xl shadow-primary/30 z-10 border-4 border-white/10 backdrop-blur-sm"
+          animate={isListening ? { 
+            scale: [1, 1.05, 1],
+            boxShadow: [
+              "0 0 40px rgba(59, 130, 246, 0.3)",
+              "0 0 60px rgba(59, 130, 246, 0.5)",
+              "0 0 40px rgba(59, 130, 246, 0.3)"
+            ]
+          } : {}}
+          transition={{ duration: 2, repeat: Infinity }}
+        >
+          <HeartHandshake className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 text-white drop-shadow-lg" />
           {isSending && (
             <motion.div 
-              className="absolute inset-0 rounded-full border-4 border-white/30"
+              className="absolute inset-0 rounded-full border-4 border-white/40"
               animate={{ rotate: 360 }}
               transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
             />
           )}
-        </div>
+          {isAISpeakingRef.current && (
+            <motion.div
+              className="absolute inset-0 rounded-full bg-primary/20"
+              animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+          )}
+        </motion.div>
       </main>
 
       {/* Transcript / Subtitles */}
@@ -711,48 +735,64 @@ export default function VoiceCall() {
       </div>
 
       {/* Controls */}
-      <footer className="w-full max-w-sm grid grid-cols-3 gap-4 sm:gap-6 md:gap-8 mb-4 sm:mb-8 md:mb-12 px-4">
-        <div className="flex flex-col items-center gap-1 sm:gap-2">
+      <footer className="w-full max-w-sm grid grid-cols-3 gap-4 sm:gap-6 md:gap-8 mb-4 sm:mb-8 md:mb-12 px-4 relative z-10">
+        <motion.div 
+          className="flex flex-col items-center gap-1 sm:gap-2"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
           <Button
             size="icon"
             variant="ghost"
             onClick={toggleMute}
             className={cn(
-              "w-14 h-14 sm:w-16 sm:h-16 md:w-18 md:h-18 rounded-full border-2 transition-all touch-manipulation",
-              isMuted ? "bg-red-500/20 border-red-500 text-red-500" : "bg-slate-800 border-slate-700 text-slate-300"
+              "w-14 h-14 sm:w-16 sm:h-16 md:w-18 md:h-18 rounded-full border-2 transition-all touch-manipulation backdrop-blur-sm shadow-lg",
+              isMuted 
+                ? "bg-red-500/30 border-red-500 text-red-400 shadow-red-500/20" 
+                : "bg-slate-800/80 border-slate-600 text-slate-300 hover:bg-slate-700/80 hover:border-primary/50"
             )}
           >
             {isMuted ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
           </Button>
-          <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tighter">Mute</span>
-        </div>
+          <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-tighter">Mute</span>
+        </motion.div>
 
-        <div className="flex flex-col items-center gap-1 sm:gap-2">
+        <motion.div 
+          className="flex flex-col items-center gap-1 sm:gap-2"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
           <Button
             size="icon"
             variant="destructive"
             onClick={handleEndCall}
-            className="w-16 h-16 sm:w-18 sm:h-18 md:w-20 md:h-20 rounded-full shadow-lg shadow-red-500/20 touch-manipulation"
+            className="w-16 h-16 sm:w-18 sm:h-18 md:w-20 md:h-20 rounded-full shadow-2xl shadow-red-500/30 touch-manipulation bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 border-2 border-red-400/50 backdrop-blur-sm"
           >
             <PhoneOff className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9" />
           </Button>
-          <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tighter">End</span>
-        </div>
+          <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-tighter">End</span>
+        </motion.div>
 
-        <div className="flex flex-col items-center gap-1 sm:gap-2">
+        <motion.div 
+          className="flex flex-col items-center gap-1 sm:gap-2"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
           <Button
             size="icon"
             variant="ghost"
             onClick={() => setIsSpeakerOn(!isSpeakerOn)}
             className={cn(
-              "w-14 h-14 sm:w-16 sm:h-16 md:w-18 md:h-18 rounded-full border-2 transition-all touch-manipulation",
-              !isSpeakerOn ? "bg-amber-500/20 border-amber-500 text-amber-500" : "bg-slate-800 border-slate-700 text-slate-300"
+              "w-14 h-14 sm:w-16 sm:h-16 md:w-18 md:h-18 rounded-full border-2 transition-all touch-manipulation backdrop-blur-sm shadow-lg",
+              !isSpeakerOn 
+                ? "bg-amber-500/30 border-amber-500 text-amber-400 shadow-amber-500/20" 
+                : "bg-slate-800/80 border-slate-600 text-slate-300 hover:bg-slate-700/80 hover:border-primary/50"
             )}
           >
             {!isSpeakerOn ? <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" /> : <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />}
           </Button>
-          <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tighter">Speaker</span>
-        </div>
+          <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-tighter">Speaker</span>
+        </motion.div>
       </footer>
     </div>
   );
