@@ -220,14 +220,19 @@ export async function speakWithEdgeTTS(
   onError?: (error: Error) => void
 ): Promise<() => void> {
   try {
-    // iOS Detection for special handling
+    // iOS Detection - Audio element is unreliable on iOS, use browser TTS directly
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    
+    if (isIOS) {
+      // iOS: Use browser TTS directly (more reliable than Audio element)
+      console.log("📱 iOS detected - using browser TTS for reliable playback");
+      return speakWithBrowserTTS(text, onStart, onEnd, onError);
+    }
     
     // Note: We don't cancel previous audio here - let it finish naturally
     // The queue system in VoiceCall.tsx ensures only one plays at a time
     
-    // Try cloud TTS first for ALL devices (including iOS) - same voice everywhere!
-    // iOS will fallback to browser TTS if Audio element fails
+    // Try cloud TTS first (FREE, no API key needed!)
     const response = await fetch("/api/tts", {
       method: "POST",
       headers: {
