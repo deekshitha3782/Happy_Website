@@ -192,8 +192,8 @@ export async function registerRoutes(
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Text-to-Speech endpoint using Microsoft Edge TTS (FREE, NO API KEY REQUIRED!)
-  // Provides consistent female voice across ALL devices
+  // Text-to-Speech endpoint using Google Translate TTS (FREE, NO API KEY REQUIRED!)
+  // This is a reliable free TTS service that works consistently
   app.post("/api/tts", async (req, res) => {
     try {
       const { text } = req.body;
@@ -202,59 +202,51 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Text is required" });
       }
 
-      // Microsoft Edge TTS - FREE, no API key needed!
-      // Uses the same TTS engine as Microsoft Edge browser
-      // Voice: en-US-AriaNeural (pleasant female voice, consistent across devices)
-      
+      // Google Translate TTS - FREE, no API key needed, works reliably!
+      // Provides consistent voice across ALL devices
       try {
-        // Edge TTS uses WebSocket-like communication, but we can use the REST endpoint
-        // Create SSML for better voice control
-        const ssmlText = `<speak version="1.0" xml:lang="en-US">
-          <voice xml:lang="en-US" xml:gender="Female" name="en-US-AriaNeural">
-            <prosody rate="0.9">
-              ${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')}
-            </prosody>
-          </voice>
-        </speak>`;
+        // Google Translate TTS endpoint (public, no auth needed)
+        // Language: en (English), Speed: 0.9 (slightly slower for clarity)
+        const encodedText = encodeURIComponent(text);
+        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob&ttsspeed=0.9`;
         
-        // Use Edge TTS REST endpoint (public, no auth needed)
-        // This endpoint is used by Microsoft Edge browser
-        const encodedText = encodeURIComponent(ssmlText);
-        const ttsUrl = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/tts?text=${encodedText}&voice=en-US-AriaNeural&format=audio-24khz-48kbitrate-mono-mp3`;
+        console.log("🔊 Attempting Google Translate TTS for text:", text.substring(0, 50) + "...");
         
         const response = await fetch(ttsUrl, {
           method: "GET",
           headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-            "Referer": "https://www.microsoft.com/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://translate.google.com/",
             "Accept": "audio/mpeg, audio/*;q=0.9",
           },
         });
 
-        if (!response.ok) {
-          throw new Error(`Edge TTS HTTP error: ${response.status}`);
+        if (response.ok) {
+          const audioBuffer = await response.arrayBuffer();
+          
+          if (audioBuffer.byteLength > 0) {
+            console.log("✅ Google Translate TTS success:", audioBuffer.byteLength, "bytes");
+            const base64Audio = Buffer.from(audioBuffer).toString('base64');
+            
+            return res.status(200).json({
+              audioContent: base64Audio,
+              useBrowserTTS: false,
+              format: "audio/mpeg"
+            });
+          }
         }
-
-        // Get audio as ArrayBuffer
-        const audioBuffer = await response.arrayBuffer();
         
-        // Convert to base64
-        const base64Audio = Buffer.from(audioBuffer).toString('base64');
-        
-        // Return base64 audio data
-        res.status(200).json({
-          audioContent: base64Audio, // Base64 encoded MP3
-          useBrowserTTS: false,
-          format: "audio/mpeg"
-        });
+        console.warn("⚠️ Google Translate TTS returned non-OK status:", response.status);
+        throw new Error(`Google Translate TTS HTTP error: ${response.status}`);
 
-      } catch (edgeTtsError) {
-        console.error("Edge TTS error:", edgeTtsError);
+      } catch (ttsError) {
+        console.error("❌ TTS error:", ttsError);
+        console.error("❌ Error details:", ttsError instanceof Error ? ttsError.stack : String(ttsError));
         // Fallback to browser TTS on error
         return res.status(200).json({ 
           useBrowserTTS: true,
-          message: "Edge TTS service unavailable, using browser TTS",
-          details: edgeTtsError instanceof Error ? edgeTtsError.message : String(edgeTtsError)
+          message: "TTS service unavailable, using browser TTS",
+          details: ttsError instanceof Error ? ttsError.message : String(ttsError)
         });
       }
 
@@ -263,7 +255,7 @@ export async function registerRoutes(
       // Fallback to browser TTS on error
       res.status(200).json({ 
         useBrowserTTS: true,
-        message: "Edge TTS service error, using browser TTS",
+        message: "TTS service error, using browser TTS",
         details: error instanceof Error ? error.message : String(error)
       });
     }

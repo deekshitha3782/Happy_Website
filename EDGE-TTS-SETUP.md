@@ -1,8 +1,8 @@
-# Microsoft Edge TTS Setup
+# Free Cloud TTS Setup
 
 ## ✅ FREE - No API Key Required! No Billing!
 
-Microsoft Edge TTS is **completely free** (no billing setup needed!) and provides **consistent voices across ALL devices**!
+The app uses **Google Translate TTS** which is **completely free** (no billing setup needed!) and provides **consistent voices across ALL devices**!
 
 ## Why Edge TTS?
 
@@ -13,11 +13,11 @@ Microsoft Edge TTS is **completely free** (no billing setup needed!) and provide
 
 ## How It Works
 
-The app automatically uses Microsoft Edge TTS service which:
-- Uses the same TTS engine as Microsoft Edge browser
-- Provides consistent female voice (`en-US-AriaNeural`) across all devices
+The app automatically uses Google Translate TTS service which:
+- Uses Google's free public TTS endpoint
+- Provides consistent voice across all devices
 - **No setup required** - just works automatically!
-- Falls back to browser TTS if Edge TTS is unavailable (shouldn't happen normally)
+- Falls back to browser TTS if cloud TTS is unavailable
 
 ## Voice Details
 

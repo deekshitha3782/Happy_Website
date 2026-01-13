@@ -200,12 +200,12 @@ export async function speakWithEdgeTTS(
 
     // If API says to use browser TTS, fall back
     if (data.useBrowserTTS || !data.audioContent) {
-      console.log("🌐 Using browser TTS (Edge TTS unavailable, using device-specific voice)");
+      console.log("🌐 Using browser TTS (cloud TTS unavailable, using device-specific voice)");
       return speakWithBrowserTTS(text, onStart, onEnd, onError);
     }
 
-    // Use Edge TTS audio (consistent voice across all devices!)
-    console.log("☁️ Using Edge TTS (consistent voice across devices - FREE!)");
+    // Use cloud TTS audio (consistent voice across all devices!)
+    console.log("☁️ Using cloud TTS (consistent voice across devices - FREE!)");
     
     // Decode base64 audio
     const audioData = atob(data.audioContent);
