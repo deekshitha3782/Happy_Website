@@ -483,8 +483,8 @@ export default function VoiceCall() {
             // Complete cleanup when component unmounts or dependencies change
             if (recognitionRef.current) {
               try {
-                recognitionRef.current.stop();
-                recognitionRef.current.abort(); // Force stop
+                // Use abort() only (no stop()) to avoid system sounds
+                recognitionRef.current.abort(); // Force stop without sound
               } catch (e) {
                 // Ignore errors if already stopped
               }
@@ -541,8 +541,8 @@ export default function VoiceCall() {
     isTTSPlayingRef.current = true; // Mark TTS as playing
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop();
-        recognitionRef.current.abort(); // Force stop completely
+        // Use abort() only (no stop()) to avoid system sounds
+        recognitionRef.current.abort(); // Force stop completely without sound
         setIsListening(false);
         console.log("🔇 Mic COMPLETELY OFF - AI is speaking (no input will be accepted)");
       } catch (e) {
@@ -562,7 +562,7 @@ export default function VoiceCall() {
         console.log("🔊 TTS started - playing message from queue");
         if (recognitionRef.current && isListening) {
           try {
-            recognitionRef.current.stop();
+            // Use abort() only (no stop()) to avoid system sounds
             recognitionRef.current.abort();
             setIsListening(false);
           } catch (e) {
@@ -726,7 +726,8 @@ export default function VoiceCall() {
   const toggleMute = () => {
     setIsMuted(!isMuted);
     if (!isMuted) {
-      recognitionRef.current?.stop();
+      // Use abort() only (no stop()) to avoid system sounds
+      recognitionRef.current?.abort();
       setIsListening(false);
     } else {
       recognitionRef.current?.start();
@@ -738,8 +739,8 @@ export default function VoiceCall() {
     // Completely stop and clean up speech recognition
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop();
-        recognitionRef.current.abort(); // Force stop
+        // Use abort() only (no stop()) to avoid system sounds
+        recognitionRef.current.abort(); // Force stop without sound
       } catch (e) {
         // Ignore errors if already stopped
       }
