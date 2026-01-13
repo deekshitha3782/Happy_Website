@@ -210,12 +210,12 @@ export async function registerRoutes(
       const input = api.messages.create.input.parse(req.body);
       console.log("POST /api/messages - Input validated:", { role: input.role, contentLength: input.content.length });
       
-      // 1. Validate user message - prevent empty or very short messages
+      // 1. Validate user message - accept even single words (ok, sure, thank you, etc.)
       const userMessage = input.content.trim();
-      if (!userMessage || userMessage.length < 2) {
-        console.log("POST /api/messages - Rejected: message too short or empty");
+      if (!userMessage || userMessage.length < 1) {
+        console.log("POST /api/messages - Rejected: message empty");
         return res.status(400).json({ 
-          error: "Message too short. Please speak clearly or type a longer message." 
+          error: "Please say something." 
         });
       }
       

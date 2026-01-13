@@ -40,11 +40,39 @@ export default function VoiceCall() {
   const mediaStreamRef = useRef<MediaStream | null>(null); // Keep mic stream active
   const recentAIMessagesRef = useRef<string[]>([]); // Track recent AI messages to filter echo
   const isAISpeakingRef = useRef<boolean>(false); // Track if AI is currently speaking
+  const wakeLockRef = useRef<any>(null); // Wake Lock to prevent screen timeout
 
   // Detect device/browser type
   const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  // Wake Lock API - Prevent screen timeout (like commercial AI agents)
+  useEffect(() => {
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+          console.log("✅ Wake Lock active - screen won't timeout");
+          
+          // Handle wake lock release
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log("Wake Lock released");
+          });
+        } catch (err: any) {
+          console.log("Wake Lock not supported or failed:", err.message);
+        }
+      }
+    };
+
+    requestWakeLock();
+
+    return () => {
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+      }
+    };
+  }, []);
 
   // Stop any chat voice and clear chat when Call AI starts, then send greeting
   useEffect(() => {
@@ -257,16 +285,16 @@ export default function VoiceCall() {
             return;
           }
           
-          // Simple validation - check it's not empty
-          if (trimmed.length >= 2) {
+          // Accept any input - even single words (ok, sure, thank you, etc.)
+          if (trimmed.length >= 1) {
             // Prevent duplicates
             if (trimmed === lastSentMessageRef.current) {
               console.log("⚠️ Duplicate message ignored:", trimmed);
               return;
             }
             
-            // Send to AI - only final results (complete sentences)
-            console.log("✅ Sending complete sentence to AI:", trimmed);
+            // Send to AI - accept single words and phrases
+            console.log("✅ Sending input to AI:", trimmed);
             lastSentMessageRef.current = trimmed;
             sendMessage({ role: "user", content: trimmed });
             
@@ -539,23 +567,46 @@ export default function VoiceCall() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-between p-4 sm:p-6 md:p-8 font-sans overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col items-center justify-between p-4 sm:p-6 md:p-8 font-sans overflow-hidden relative">
+      {/* Animated background gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-blue-500/5 animate-pulse" />
+      
       {/* Top Info */}
-      <header className="w-full flex flex-col items-center gap-2 mt-4 sm:mt-8 md:mt-12">
+      <header className="w-full flex flex-col items-center gap-2 mt-4 sm:mt-8 md:mt-12 relative z-10">
         <motion.div 
-          animate={{ scale: [1, 1.05, 1] }}
-          transition={{ duration: 4, repeat: Infinity }}
-          className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-primary/20 rounded-2xl flex items-center justify-center text-primary mb-2 sm:mb-3 md:mb-4"
+          animate={{ 
+            scale: [1, 1.1, 1],
+            rotate: [0, 5, -5, 0]
+          }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          className="w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 bg-gradient-to-br from-primary/30 to-blue-500/30 rounded-3xl flex items-center justify-center text-primary mb-2 sm:mb-3 md:mb-4 shadow-lg shadow-primary/20 backdrop-blur-sm border border-primary/20"
         >
-          <CloudSun className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8" />
+          <CloudSun className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10" />
         </motion.div>
-        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight">Serenity AI</h1>
-        <p className={cn(
-          "text-xs sm:text-sm font-medium transition-colors",
-          callStatus === "Connected" ? "text-green-400" : "text-slate-400"
-        )}>
+        <motion.h1 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-primary via-blue-400 to-primary bg-clip-text text-transparent"
+        >
+          Serenity AI
+        </motion.h1>
+        <motion.p 
+          className={cn(
+            "text-xs sm:text-sm font-medium transition-all duration-300 flex items-center gap-2",
+            callStatus === "Connected" ? "text-green-400" : "text-slate-400"
+          )}
+          animate={callStatus === "Connected" ? { scale: [1, 1.05, 1] } : {}}
+          transition={{ duration: 2, repeat: Infinity }}
+        >
+          {callStatus === "Connected" && (
+            <motion.span
+              animate={{ opacity: [1, 0.5, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="w-2 h-2 bg-green-400 rounded-full"
+            />
+          )}
           {callStatus}
-        </p>
+        </motion.p>
         {(!callStatus.includes("Connected") && 
           !callStatus.includes("iOS Safari") && 
           !callStatus.includes("not supported") &&
@@ -608,27 +659,49 @@ export default function VoiceCall() {
       </main>
 
       {/* Transcript / Subtitles */}
-      <div className="w-full max-w-md text-center min-h-[60px] sm:min-h-[80px] md:min-h-[96px] flex items-center justify-center px-4 py-2">
+      <div className="w-full max-w-md text-center min-h-[60px] sm:min-h-[80px] md:min-h-[96px] flex items-center justify-center px-4 py-2 relative z-10">
         <AnimatePresence mode="wait">
           {transcript ? (
-            <motion.p 
+            <motion.div
               key="transcript"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-sm sm:text-base md:text-lg text-slate-300 italic font-medium break-words"
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              className="bg-slate-800/50 backdrop-blur-sm rounded-2xl px-4 py-3 border border-primary/20 shadow-lg"
             >
-              "{transcript}"
-            </motion.p>
+              <motion.p 
+                className="text-sm sm:text-base md:text-lg text-slate-200 font-medium break-words"
+              >
+                "{transcript}"
+              </motion.p>
+            </motion.div>
           ) : isSending ? (
-            <motion.p 
+            <motion.div
               key="listening"
-              className="text-slate-500 text-xs sm:text-sm tracking-widest uppercase font-bold"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex items-center gap-2"
             >
-              Listening...
-            </motion.p>
+              <motion.div
+                className="flex gap-1"
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              >
+                <span className="w-2 h-2 bg-primary rounded-full" />
+                <span className="w-2 h-2 bg-primary rounded-full" style={{ animationDelay: "0.2s" }} />
+                <span className="w-2 h-2 bg-primary rounded-full" style={{ animationDelay: "0.4s" }} />
+              </motion.div>
+              <span className="text-slate-400 text-xs sm:text-sm tracking-widest uppercase font-bold">
+                Listening...
+              </span>
+            </motion.div>
           ) : (
             <motion.p 
               key="waiting"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               className="text-slate-500 text-xs sm:text-sm tracking-widest uppercase font-bold"
             >
               Speak freely
