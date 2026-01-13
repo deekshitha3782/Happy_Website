@@ -147,13 +147,13 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
     utterance.lang = 'en-IN'; // Default to Indian English if no voice selected
   }
   
-  // CONSISTENT voice settings across all devices
-  // These settings help make voices sound more similar even if they're different voices
-  utterance.rate = 0.9;   // Natural, pleasant speaking rate (not fast-forwarded)
-  utterance.pitch = 1.0;  // Same pitch on all devices
-  utterance.volume = 0.95; // Same volume on all devices
+  // CALMER, SMOOTHER, SWEETER voice settings
+  // Optimized for a gentle, soothing, emotionally supportive experience
+  utterance.rate = 0.75;   // Slower rate = calmer, more soothing (was 0.9)
+  utterance.pitch = 0.95;  // Slightly lower pitch = sweeter, more gentle (was 1.0)
+  utterance.volume = 0.9;   // Slightly softer volume = more calming (was 0.95)
   
-  console.log(`🎤 Voice configured: ${selectedVoice?.name || 'default'} (${utterance.lang}), rate: ${utterance.rate}, pitch: ${utterance.pitch}, volume: ${utterance.volume}`);
+  console.log(`🎤 Voice configured: ${selectedVoice?.name || 'default'} (${utterance.lang}), rate: ${utterance.rate}, pitch: ${utterance.pitch}, volume: ${utterance.volume} - Calm & Sweet`);
 }
 
 /**

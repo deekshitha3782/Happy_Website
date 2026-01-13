@@ -603,33 +603,43 @@ export default function VoiceCall() {
 
   // Voice Output (TTS) with queue system - ensures one voice at a time
   useEffect(() => {
-    if (!isSpeakerOn || !messages) return;
+    if (!isSpeakerOn || !messages || messages.length === 0) return;
 
     const lastMessage = messages[messages.length - 1];
-    if (lastMessage && lastMessage.role === "assistant" && lastMessage.id !== lastReadMessageId.current) {
-      // Check if this message is already in queue or currently playing
+    if (lastMessage && lastMessage.role === "assistant") {
+      // CRITICAL: Only process if this is a NEW message we haven't seen before
+      if (lastMessage.id === lastReadMessageId.current) {
+        console.log(`⏭️ Message ${lastMessage.id} already processed - skipping (prevents duplicate TTS)`);
+        return;
+      }
+
+      // Check if this message is already in queue
       const isAlreadyQueued = ttsQueueRef.current.some(msg => msg.id === lastMessage.id);
-      const isCurrentlyPlaying = isTTSPlayingRef.current && lastReadMessageId.current === lastMessage.id;
-      
-      if (isAlreadyQueued || isCurrentlyPlaying) {
-        console.log(`⏭️ Message ${lastMessage.id} already queued or playing - skipping`);
+      if (isAlreadyQueued) {
+        console.log(`⏭️ Message ${lastMessage.id} already in queue - skipping`);
+        return;
+      }
+
+      // Check if this message is currently playing
+      if (isTTSPlayingRef.current && lastReadMessageId.current === lastMessage.id) {
+        console.log(`⏭️ Message ${lastMessage.id} currently playing - skipping`);
         return;
       }
 
       // Add to queue
-      console.log(`📋 Adding message ${lastMessage.id} to TTS queue (queue length: ${ttsQueueRef.current.length})`);
+      console.log(`📋 Adding NEW message ${lastMessage.id} to TTS queue (queue length: ${ttsQueueRef.current.length})`);
       ttsQueueRef.current.push({
         id: lastMessage.id,
         content: lastMessage.content
       });
 
-      // Update last read message ID
+      // Update last read message ID IMMEDIATELY to prevent duplicate processing
       lastReadMessageId.current = lastMessage.id;
 
       // Process queue (will only play if nothing is currently playing)
       processTTSQueue();
     }
-  }, [messages, isSpeakerOn, isListening, isMuted]);
+  }, [messages, isSpeakerOn]);
 
   // Cleanup function for TTS
   useEffect(() => {
