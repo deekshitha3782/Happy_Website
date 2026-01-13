@@ -3,16 +3,28 @@ import { db } from "./db";
 import { eq, asc } from "drizzle-orm";
 
 export interface IStorage {
-  getMessages(): Promise<Message[]>;
+  getMessages(sessionType?: string): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
-  clearMessages(): Promise<void>;
+  clearMessages(sessionType?: string): Promise<void>;
 }
 
+import { eq } from "drizzle-orm";
+
 export class DatabaseStorage implements IStorage {
-  async getMessages(): Promise<Message[]> {
+  async getMessages(sessionType?: string): Promise<Message[]> {
     try {
-      const result = await db.select().from(messages).orderBy(asc(messages.createdAt));
-      console.log(`DatabaseStorage.getMessages: Retrieved ${result.length} messages`);
+      let result;
+      if (sessionType) {
+        // Filter by session type (chat or call)
+        result = await db.select().from(messages)
+          .where(eq(messages.sessionType, sessionType))
+          .orderBy(asc(messages.createdAt));
+        console.log(`DatabaseStorage.getMessages: Retrieved ${result.length} messages for session type: ${sessionType}`);
+      } else {
+        // Get all messages (backward compatibility)
+        result = await db.select().from(messages).orderBy(asc(messages.createdAt));
+        console.log(`DatabaseStorage.getMessages: Retrieved ${result.length} messages (all sessions)`);
+      }
       return result;
     } catch (error) {
       console.error("DatabaseStorage.getMessages error:", error);
@@ -22,20 +34,35 @@ export class DatabaseStorage implements IStorage {
 
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
     try {
-      console.log("DatabaseStorage.createMessage: Inserting message", { role: insertMessage.role });
-    const [message] = await db.insert(messages).values(insertMessage).returning();
+      // Ensure sessionType is set (default to 'chat' if not provided)
+      const messageWithSession = {
+        ...insertMessage,
+        sessionType: (insertMessage as any).sessionType || "chat"
+      };
+      console.log("DatabaseStorage.createMessage: Inserting message", { 
+        role: insertMessage.role, 
+        sessionType: messageWithSession.sessionType 
+      });
+      const [message] = await db.insert(messages).values(messageWithSession as any).returning();
       console.log("DatabaseStorage.createMessage: Message created with ID", message.id);
-    return message;
+      return message;
     } catch (error) {
       console.error("DatabaseStorage.createMessage error:", error);
       throw error;
     }
   }
   
-  async clearMessages(): Promise<void> {
+  async clearMessages(sessionType?: string): Promise<void> {
     try {
-    await db.delete(messages);
-      console.log("DatabaseStorage.clearMessages: All messages cleared");
+      if (sessionType) {
+        // Clear only messages for this session type
+        await db.delete(messages).where(eq(messages.sessionType, sessionType));
+        console.log(`DatabaseStorage.clearMessages: Cleared messages for session type: ${sessionType}`);
+      } else {
+        // Clear all messages (backward compatibility)
+        await db.delete(messages);
+        console.log("DatabaseStorage.clearMessages: All messages cleared");
+      }
     } catch (error) {
       console.error("DatabaseStorage.clearMessages error:", error);
       throw error;

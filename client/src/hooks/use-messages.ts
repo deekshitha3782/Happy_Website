@@ -1,12 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type Message, type InsertMessage } from "@shared/routes";
 
-export function useMessages() {
+export function useMessages(sessionType: string = "chat") {
   return useQuery({
-    queryKey: [api.messages.list.path],
+    queryKey: [api.messages.list.path, sessionType],
     queryFn: async () => {
       try {
-      const res = await fetch(api.messages.list.path);
+      const res = await fetch(`${api.messages.list.path}?sessionType=${sessionType}`);
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({ message: "Unknown error" }));
           throw new Error(errorData.error || errorData.message || `Failed to fetch messages: ${res.status}`);
@@ -21,7 +21,7 @@ export function useMessages() {
   });
 }
 
-export function useSendMessage() {
+export function useSendMessage(sessionType: string = "chat") {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (message: InsertMessage) => {
@@ -29,7 +29,7 @@ export function useSendMessage() {
       const res = await fetch(api.messages.create.path, {
         method: api.messages.create.method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(message),
+        body: JSON.stringify({ ...message, sessionType }),
       });
       
       if (!res.ok) {
@@ -49,24 +49,25 @@ export function useSendMessage() {
       }
     },
     onSuccess: (newAssistantMessage, variables) => {
-      // Optimistically update or invalidate. Here we invalidate to refetch full history
-      // Ideally, we could append both the user's message (variables) and the response (newAssistantMessage) manually
-      queryClient.invalidateQueries({ queryKey: [api.messages.list.path] });
+      // Invalidate queries for this session type
+      queryClient.invalidateQueries({ queryKey: [api.messages.list.path, sessionType] });
     },
   });
 }
 
-export function useClearChat() {
+export function useClearChat(sessionType: string = "chat") {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
       const res = await fetch(api.messages.clear.path, {
         method: api.messages.clear.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionType }),
       });
       if (!res.ok) throw new Error("Failed to clear chat");
     },
     onSuccess: () => {
-      queryClient.setQueryData([api.messages.list.path], []);
+      queryClient.setQueryData([api.messages.list.path, sessionType], []);
     },
   });
 }

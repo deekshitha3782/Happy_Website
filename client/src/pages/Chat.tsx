@@ -11,9 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 import { configureFemaleVoice, waitForVoices } from "@/utils/voice";
 
 export default function Chat() {
-  const { data: messages, isLoading, error: messagesError } = useMessages();
-  const { mutate: sendMessage, isPending: isSending, error: sendError } = useSendMessage();
-  const { mutate: clearChat, isPending: isClearing } = useClearChat();
+  const { data: messages, isLoading, error: messagesError } = useMessages("chat"); // Use "chat" session type
+  const { mutate: sendMessage, isPending: isSending, error: sendError } = useSendMessage("chat"); // Use "chat" session type
+  const { mutate: clearChat, isPending: isClearing } = useClearChat("chat"); // Use "chat" session type
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);

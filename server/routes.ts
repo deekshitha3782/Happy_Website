@@ -194,10 +194,12 @@ export async function registerRoutes(
 
   app.get(api.messages.list.path, async (req, res) => {
     try {
-      console.log("GET /api/messages - Fetching messages");
-    const messages = await storage.getMessages();
+      // Get session type from query parameter (default to 'chat')
+      const sessionType = (req.query.sessionType as string) || "chat";
+      console.log("GET /api/messages - Fetching messages for session type:", sessionType);
+      const messages = await storage.getMessages(sessionType);
       console.log(`GET /api/messages - Found ${messages.length} messages`);
-    res.json(messages);
+      res.json(messages);
     } catch (err) {
       console.error("Error fetching messages:", err);
       res.status(500).json({ message: "Failed to fetch messages", error: err instanceof Error ? err.message : String(err) });
@@ -242,12 +244,15 @@ export async function registerRoutes(
         return res.status(201).json(assistantMessage);
       }
       
-      // Save user message
-      await storage.createMessage(input);
-      console.log("POST /api/messages - User message saved:", userMessage.substring(0, 50));
+      // Get session type from request body (default to 'chat')
+      const sessionType = (req.body.sessionType as string) || "chat";
+      
+      // Save user message with session type
+      await storage.createMessage({ ...input, sessionType } as any);
+      console.log("POST /api/messages - User message saved:", userMessage.substring(0, 50), "sessionType:", sessionType);
 
-      // 2. Get history for context
-      const history = await storage.getMessages();
+      // 2. Get history for context (only for this session type)
+      const history = await storage.getMessages(sessionType);
       console.log(`POST /api/messages - Got ${history.length} messages from history`);
       const messagesForAI = history.map(m => ({
         role: m.role as "user" | "assistant" | "system",

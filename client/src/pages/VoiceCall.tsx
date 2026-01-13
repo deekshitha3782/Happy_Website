@@ -21,9 +21,9 @@ function calculateSimilarity(str1: string, str2: string): number {
 
 export default function VoiceCall() {
   const [, setLocation] = useLocation();
-  const { data: messages } = useMessages();
-  const { mutate: sendMessage, isPending: isSending } = useSendMessage();
-  const { mutate: clearChat } = useClearChat();
+  const { data: messages } = useMessages("call"); // Use "call" session type
+  const { mutate: sendMessage, isPending: isSending } = useSendMessage("call"); // Use "call" session type
+  const { mutate: clearChat } = useClearChat("call"); // Use "call" session type
   
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -197,7 +197,9 @@ export default function VoiceCall() {
         }
       };
 
-      // FIXED: Only send final results - wait for COMPLETE sentence (especially on mobile)
+      // FIXED: Reliable speech recognition - use timeout to prevent hanging
+      let pendingFinalTranscript = "";
+      
       recognitionRef.current.onresult = (event: any) => {
         // Don't process results if AI is speaking
         if (isAISpeakingRef.current) {
@@ -235,75 +237,58 @@ export default function VoiceCall() {
           isAISpeakingRef.current = false; // User interrupted AI
         }
         
-        // ONLY send final results - wait for COMPLETE sentence (especially on mobile)
+        // Process final results - use timeout-based approach for reliability
         if (finalTranscript.trim()) {
           const trimmed = finalTranscript.trim();
+          pendingFinalTranscript = trimmed; // Store for timeout processing
           
-          // MOBILE FIX: Wait for complete sentence with natural pause
-          // Mobile browsers mark "final" too quickly - need stricter validation
-          const hasPunctuation = /[.!?]$/.test(trimmed);
-          const hasNaturalPause = trimmed.length >= (isMobile ? 15 : 8); // Longer threshold on mobile
-          const endsWithWord = /\w+$/.test(trimmed); // Ends with a complete word
+          // Clear any existing timeout
+          if (sendTimeoutRef.current) {
+            clearTimeout(sendTimeoutRef.current);
+          }
           
-          // On mobile, require BOTH punctuation AND sufficient length OR very long phrase
-          const isCompleteSentence = isMobile 
-            ? (hasPunctuation && hasNaturalPause) || trimmed.length >= 25
-            : hasPunctuation || hasNaturalPause;
-          
-          if (!isCompleteSentence) {
-            console.log(`⏳ Waiting for complete sentence ${isMobile ? '(mobile)' : '(desktop)'}:`, trimmed, {
-              hasPunctuation,
-              hasNaturalPause,
-              length: trimmed.length,
-              endsWithWord
+          // Use timeout to wait for more input (prevents hanging)
+          // If no more speech comes within timeout, send what we have
+          sendTimeoutRef.current = setTimeout(() => {
+            // Process and send the final transcript
+            const toSend = pendingFinalTranscript;
+            pendingFinalTranscript = ""; // Clear after processing
+            
+            // ECHO FILTERING: Check if this matches recent AI messages
+            const trimmedLower = toSend.toLowerCase();
+            const isEcho = recentAIMessagesRef.current.some(aiMsg => {
+              const similarity = calculateSimilarity(trimmedLower, aiMsg);
+              return similarity > 0.6;
             });
-            // Don't send yet - wait for more input
-            // On mobile, wait a bit longer to see if more comes
-            if (isMobile) {
-              // Wait 1 second to see if more speech comes
-              setTimeout(() => {
-                // If no new final results came, send what we have if it's reasonable
-                if (trimmed.length >= 10) {
-                  console.log("✅ Mobile: Sending after wait period:", trimmed);
-                  // Will be processed in next onresult if user continues, or send now
-                }
-              }, 1000);
-            }
-            return;
-          }
-          
-          // ECHO FILTERING: Check if this matches recent AI messages
-          const trimmedLower = trimmed.toLowerCase();
-          const isEcho = recentAIMessagesRef.current.some(aiMsg => {
-            const similarity = calculateSimilarity(trimmedLower, aiMsg);
-            return similarity > 0.6;
-          });
-          
-          if (isEcho) {
-            console.log("🚫 ECHO DETECTED - Ignoring AI voice:", trimmed);
-            setTranscript("");
-            return;
-          }
-          
-          // Accept any input - even single words (ok, sure, thank you, etc.)
-          if (trimmed.length >= 1) {
-            // Prevent duplicates
-            if (trimmed === lastSentMessageRef.current) {
-              console.log("⚠️ Duplicate message ignored:", trimmed);
+            
+            if (isEcho) {
+              console.log("🚫 ECHO DETECTED - Ignoring AI voice:", toSend);
+              setTranscript("");
               return;
             }
             
-            // Send to AI - accept single words and phrases
-            console.log("✅ Sending input to AI:", trimmed);
-            lastSentMessageRef.current = trimmed;
-            sendMessage({ role: "user", content: trimmed });
-            
-            // Clear transcript after sending
-            setTimeout(() => {
-              setTranscript("");
-              lastSentMessageRef.current = "";
-            }, 1000);
-          }
+            // Accept any input - even single words (ok, sure, thank you, etc.)
+            if (toSend.length >= 1) {
+              // Prevent duplicates
+              if (toSend === lastSentMessageRef.current) {
+                console.log("⚠️ Duplicate message ignored:", toSend);
+                return;
+              }
+              
+              // Send to AI - accept single words and phrases
+              console.log("✅ Sending input to AI:", toSend);
+              lastSentMessageRef.current = toSend;
+              sendMessage({ role: "user", content: toSend });
+              
+              // Clear transcript after sending
+              setTimeout(() => {
+                setTranscript("");
+                lastSentMessageRef.current = "";
+              }, 1000);
+            }
+          }, isMobile ? 600 : 400); // Shorter timeout for better responsiveness
+          
+          console.log(`⏳ Waiting ${isMobile ? 600 : 400}ms for more input, will send: "${trimmed}"`);
         }
       };
 

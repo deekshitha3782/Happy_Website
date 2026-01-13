@@ -27,15 +27,29 @@ async function migrate() {
     if (!tableExists) {
       console.log("Creating messages table...");
       
-      // Create messages table matching the schema
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS messages (
-          id SERIAL PRIMARY KEY,
-          role TEXT NOT NULL,
-          content TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
-        );
-      `);
+             // Create messages table matching the schema
+             await pool.query(`
+               CREATE TABLE IF NOT EXISTS messages (
+                 id SERIAL PRIMARY KEY,
+                 role TEXT NOT NULL,
+                 content TEXT NOT NULL,
+                 session_type TEXT DEFAULT 'chat',
+                 created_at TIMESTAMP DEFAULT NOW()
+               );
+             `);
+             
+             // Add session_type column if it doesn't exist (for existing databases)
+             await pool.query(`
+               DO $$ 
+               BEGIN
+                 IF NOT EXISTS (
+                   SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'messages' AND column_name = 'session_type'
+                 ) THEN
+                   ALTER TABLE messages ADD COLUMN session_type TEXT DEFAULT 'chat';
+                 END IF;
+               END $$;
+             `);
       
       console.log("✓ Database migration completed successfully");
     } else {

@@ -6,6 +6,7 @@ export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
   role: text("role").notNull(), // 'user' or 'assistant'
   content: text("content").notNull(),
+  sessionType: text("session_type").default("chat"), // 'chat' or 'call' - separates conversations
   createdAt: timestamp("created_at").defaultNow(),
 });
 
