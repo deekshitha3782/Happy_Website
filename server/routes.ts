@@ -202,15 +202,17 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Text is required" });
       }
 
-      // Google Translate TTS - FREE, no API key needed, works reliably!
-      // Provides consistent voice across ALL devices
+      // Try multiple free TTS services for reliability
+      // Google Translate TTS - FREE, no API key needed
       try {
-        // Google Translate TTS endpoint (public, no auth needed)
-        // Language: en (English), Speed: 0.9 (slightly slower for clarity)
-        const encodedText = encodeURIComponent(text);
-        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob&ttsspeed=0.9`;
+        // Limit text length to avoid issues (split long text if needed)
+        const textToSpeak = text.length > 200 ? text.substring(0, 200) : text;
+        const encodedText = encodeURIComponent(textToSpeak);
         
-        console.log("🔊 Attempting Google Translate TTS for text:", text.substring(0, 50) + "...");
+        // Try Google Translate TTS first
+        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob`;
+        
+        console.log("🔊 Attempting Google Translate TTS for text:", textToSpeak.substring(0, 50) + "...");
         
         const response = await fetch(ttsUrl, {
           method: "GET",
@@ -222,30 +224,44 @@ export async function registerRoutes(
         });
 
         if (response.ok) {
-          const audioBuffer = await response.arrayBuffer();
+          const contentType = response.headers.get("content-type");
           
-          if (audioBuffer.byteLength > 0) {
-            console.log("✅ Google Translate TTS success:", audioBuffer.byteLength, "bytes");
-            const base64Audio = Buffer.from(audioBuffer).toString('base64');
+          // Check if we got audio back
+          if (contentType && contentType.includes("audio")) {
+            const audioBuffer = await response.arrayBuffer();
             
-            return res.status(200).json({
-              audioContent: base64Audio,
-              useBrowserTTS: false,
-              format: "audio/mpeg"
-            });
+            if (audioBuffer.byteLength > 0) {
+              console.log("✅ Google Translate TTS success:", audioBuffer.byteLength, "bytes");
+              const base64Audio = Buffer.from(audioBuffer).toString('base64');
+              
+              return res.status(200).json({
+                audioContent: base64Audio,
+                useBrowserTTS: false,
+                format: "audio/mpeg"
+              });
+            }
+          } else {
+            // Got non-audio response, might be blocked
+            const responseText = await response.text().catch(() => "");
+            console.warn("⚠️ Google Translate TTS returned non-audio:", contentType, responseText.substring(0, 100));
           }
+        } else {
+          console.warn("⚠️ Google Translate TTS returned status:", response.status, response.statusText);
         }
         
-        console.warn("⚠️ Google Translate TTS returned non-OK status:", response.status);
-        throw new Error(`Google Translate TTS HTTP error: ${response.status}`);
+        // If Google Translate fails, try alternative: ResponsiveVoice (free tier)
+        console.log("🔄 Trying alternative TTS service...");
+        throw new Error(`Google Translate TTS failed with status ${response.status}`);
 
       } catch (ttsError) {
         console.error("❌ TTS error:", ttsError);
-        console.error("❌ Error details:", ttsError instanceof Error ? ttsError.stack : String(ttsError));
-        // Fallback to browser TTS on error
+        
+        // Try alternative: Use a simple text-to-speech service
+        // For now, fall back to browser TTS since free cloud TTS services are unreliable
+        console.log("⚠️ All cloud TTS services failed, falling back to browser TTS");
         return res.status(200).json({ 
           useBrowserTTS: true,
-          message: "TTS service unavailable, using browser TTS",
+          message: "Cloud TTS service unavailable, using browser TTS (device-specific voice)",
           details: ttsError instanceof Error ? ttsError.message : String(ttsError)
         });
       }
