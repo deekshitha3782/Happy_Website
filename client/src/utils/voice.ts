@@ -255,24 +255,10 @@ export async function speakWithEdgeTTS(
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
     
-    // iOS Safari requires specific handling for audio playback
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    
-    // Set audio properties for iOS compatibility
-    audio.preload = "auto";
-    if (isIOS) {
-      // iOS requires these settings for reliable playback
-      (audio as any).webkitAudioContext = true;
-    }
-    
     // Store as current instance
     currentAudioInstance = audio;
 
     let cancelled = false;
-    let playAttempted = false;
-
-    // Load audio first (required for iOS)
-    audio.load();
 
     audio.onplay = () => {
       if (!cancelled && onStart) onStart();
@@ -291,79 +277,28 @@ export async function speakWithEdgeTTS(
       if (currentAudioInstance === audio) {
         currentAudioInstance = null; // Clear reference on error
       }
-      console.error("❌ Audio playback error:", e);
       if (!cancelled && onError) {
         onError(new Error("Audio playback failed"));
       }
     };
 
-    // iOS-specific: Wait for canplaythrough event before playing
-    let browserTTSCancel: (() => void) | null = null;
-    let usingBrowserTTS = false;
-    
-    const playAudio = () => {
-      if (playAttempted || cancelled) return;
-      playAttempted = true;
-      
-      const playPromise = audio.play();
-      
-      if (playPromise !== undefined) {
-        playPromise.catch((error) => {
-          console.error("❌ Audio play() failed:", error);
-          if (currentAudioInstance === audio) {
-            currentAudioInstance = null;
-          }
-          // iOS might block autoplay - fallback to browser TTS
-          if (isIOS && (error.name === 'NotAllowedError' || error.name === 'NotSupportedError')) {
-            console.log("🔄 iOS blocked audio autoplay, falling back to browser TTS");
-            URL.revokeObjectURL(audioUrl);
-            if (currentAudioInstance === audio) {
-              currentAudioInstance = null;
-            }
-            // Fallback to browser TTS immediately (async, but we'll handle it)
-            usingBrowserTTS = true;
-            speakWithBrowserTTS(text, onStart, onEnd, onError).then((cancelFn) => {
-              browserTTSCancel = cancelFn;
-            }).catch((err) => {
-              console.error("Browser TTS also failed:", err);
-              if (!cancelled && onError) {
-                onError(err);
-              }
-            });
-          } else if (!cancelled && onError) {
-            onError(error);
-          }
-        });
+    audio.play().catch((error) => {
+      if (currentAudioInstance === audio) {
+        currentAudioInstance = null; // Clear reference on play error
       }
-    };
-
-    // For iOS, wait for audio to be ready
-    if (isIOS) {
-      audio.addEventListener('canplaythrough', playAudio, { once: true });
-      // Fallback: try playing after a short delay
-      setTimeout(() => {
-        if (!playAttempted && !cancelled) {
-          playAudio();
-        }
-      }, 100);
-    } else {
-      // For other browsers, play immediately
-      playAudio();
-    }
+      if (!cancelled && onError) {
+        onError(error);
+      }
+    });
 
     // Return cancel function
     return () => {
       cancelled = true;
-      if (usingBrowserTTS && browserTTSCancel) {
-        browserTTSCancel();
-        browserTTSCancel = null;
-      } else if (!usingBrowserTTS) {
-        audio.pause();
-        audio.currentTime = 0;
-        URL.revokeObjectURL(audioUrl);
-        if (currentAudioInstance === audio) {
-          currentAudioInstance = null; // Clear reference when cancelled
-        }
+      audio.pause();
+      audio.currentTime = 0;
+      URL.revokeObjectURL(audioUrl);
+      if (currentAudioInstance === audio) {
+        currentAudioInstance = null; // Clear reference when cancelled
       }
     };
 

@@ -3,23 +3,21 @@ import { db } from "./db";
 import { eq, asc } from "drizzle-orm";
 
 export interface IStorage {
-  getMessages(sessionType?: string, deviceId?: string): Promise<Message[]>;
+  getMessages(sessionType?: string): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
-  clearMessages(sessionType?: string, deviceId?: string): Promise<void>;
+  clearMessages(sessionType?: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
-  async getMessages(sessionType?: string, deviceId?: string): Promise<Message[]> {
+  async getMessages(sessionType?: string): Promise<Message[]> {
     try {
       let result;
       if (sessionType) {
-        // Filter by session type (chat or call) and optionally deviceId
-        // sessionType now includes deviceId (e.g., "call-device-abc123")
-        // This ensures each device has separate conversations
+        // Filter by session type (chat or call)
         result = await db.select().from(messages)
           .where(eq(messages.sessionType, sessionType))
           .orderBy(asc(messages.createdAt));
-        console.log(`DatabaseStorage.getMessages: Retrieved ${result.length} messages for session: ${sessionType}`);
+        console.log(`DatabaseStorage.getMessages: Retrieved ${result.length} messages for session type: ${sessionType}`);
       } else {
         // Get all messages (backward compatibility)
         result = await db.select().from(messages).orderBy(asc(messages.createdAt));
@@ -45,23 +43,22 @@ export class DatabaseStorage implements IStorage {
       });
       const [message] = await db.insert(messages).values(messageWithSession as any).returning();
       console.log("DatabaseStorage.createMessage: Message created with ID", message.id);
-    return message;
+      return message;
     } catch (error) {
       console.error("DatabaseStorage.createMessage error:", error);
       throw error;
     }
   }
   
-  async clearMessages(sessionType?: string, deviceId?: string): Promise<void> {
+  async clearMessages(sessionType?: string): Promise<void> {
     try {
       if (sessionType) {
-        // Clear only messages for this session (which includes deviceId)
-        // sessionType now includes deviceId (e.g., "call-device-abc123")
+        // Clear only messages for this session type
         await db.delete(messages).where(eq(messages.sessionType, sessionType));
-        console.log(`DatabaseStorage.clearMessages: Cleared messages for session: ${sessionType}`);
+        console.log(`DatabaseStorage.clearMessages: Cleared messages for session type: ${sessionType}`);
       } else {
         // Clear all messages (backward compatibility)
-    await db.delete(messages);
+        await db.delete(messages);
         console.log("DatabaseStorage.clearMessages: All messages cleared");
       }
     } catch (error) {

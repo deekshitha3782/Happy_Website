@@ -7,7 +7,6 @@ export const messages = pgTable("messages", {
   role: text("role").notNull(), // 'user' or 'assistant'
   content: text("content").notNull(),
   sessionType: text("session_type").default("chat"), // 'chat' or 'call' - separates conversations
-  deviceId: text("device_id"), // Unique device/browser identifier - separates different devices
   createdAt: timestamp("created_at").defaultNow(),
 });
 
