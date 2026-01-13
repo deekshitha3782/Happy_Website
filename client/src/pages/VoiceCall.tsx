@@ -227,9 +227,11 @@ export default function VoiceCall() {
       let pendingFinalTranscript = "";
       
       recognitionRef.current.onresult = (event: any) => {
-        // Don't process results if AI is speaking
+        // CRITICAL: Never process results if AI is speaking - completely ignore all input
         if (isAISpeakingRef.current) {
-          console.log("🔇 Ignoring recognition results - AI is speaking");
+          console.log("🔇 Ignoring ALL recognition results - AI is speaking (mic should be off)");
+          // Clear any transcript that might have appeared
+          setTranscript("");
           return;
         }
         
@@ -318,13 +320,13 @@ export default function VoiceCall() {
         }
       };
 
-      // Auto-restart handler - BUT DON'T RESTART IF AI IS SPEAKING
+      // Auto-restart handler - NEVER RESTART IF AI IS SPEAKING
       recognitionRef.current.onend = () => {
-        // DON'T restart if AI is speaking or if muted
+        // CRITICAL: NEVER restart if AI is speaking - mic must stay off
         if (isAISpeakingRef.current) {
-          console.log("🔇 Recognition ended but AI is speaking - NOT restarting");
+          console.log("🔇 Recognition ended but AI is speaking - NOT restarting (mic stays off)");
           setIsListening(false);
-          return;
+          return; // Exit immediately - do not restart
         }
         
         // Auto-restart for continuous listening (only if AI is not speaking)
@@ -459,18 +461,20 @@ export default function VoiceCall() {
       // Cancel any ongoing speech before starting new one
       window.speechSynthesis.cancel();
       
-      // TURN MIC OFF when AI starts speaking - FORCE STOP
+      // CRITICAL: TURN MIC OFF when AI starts speaking - FORCE STOP and PREVENT RESTART
       isAISpeakingRef.current = true; // Mark AI as speaking
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-          recognitionRef.current.abort(); // Force stop
+          recognitionRef.current.abort(); // Force stop completely
           setIsListening(false);
-          console.log("🔇 Mic turned off - AI is speaking");
+          console.log("🔇 Mic COMPLETELY OFF - AI is speaking (no input will be accepted)");
         } catch (e) {
           console.log("Could not stop recognition:", e);
         }
       }
+      // Clear any pending transcripts
+      setTranscript("");
 
       // Use Edge TTS (FREE, consistent voice) with browser TTS fallback
       let cancelSpeech: (() => void) | null = null;
