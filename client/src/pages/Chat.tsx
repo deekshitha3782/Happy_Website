@@ -67,7 +67,7 @@ export default function Chat() {
 
   const handleSend = (content: string) => {
     sendMessage(
-      { role: "user", content },
+      { role: "user", content, sessionType: "chat" } as any,
       {
         onError: (error: Error) => {
           console.error("Error sending message:", error);

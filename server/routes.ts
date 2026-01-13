@@ -237,10 +237,12 @@ export async function registerRoutes(
       
       if (isHarmfulRequest) {
         console.log("🚫 SAFETY: Blocked harmful request:", userMessage.substring(0, 50));
+        // Get session type
+        const sessionType = (req.body.sessionType as string) || "chat";
         // Save user message and safe response
-        await storage.createMessage(input);
+        await storage.createMessage({ ...input, sessionType } as any);
         const safeResponse = "I'm really concerned about you. Please reach out for help immediately. Call a crisis hotline, talk to a trusted friend or family member, or go to your nearest emergency room. Your life has value, and there are people who want to help you. Would you like me to help you find resources?";
-        const assistantMessage = await storage.createMessage({ role: "assistant", content: safeResponse });
+        const assistantMessage = await storage.createMessage({ role: "assistant", content: safeResponse, sessionType } as any);
         return res.status(201).json(assistantMessage);
       }
       
