@@ -6,6 +6,7 @@ import { useMessages, useSendMessage, useClearChat } from "@/hooks/use-messages"
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { speakWithEdgeTTS } from "@/utils/voice";
+import { getDeviceId } from "@/utils/deviceId";
 
 // Helper function to calculate similarity between two strings (for echo detection)
 function calculateSimilarity(str1: string, str2: string): number {
@@ -21,9 +22,14 @@ function calculateSimilarity(str1: string, str2: string): number {
 
 export default function VoiceCall() {
   const [, setLocation] = useLocation();
-  const { data: messages } = useMessages("call"); // Use "call" session type
-  const { mutate: sendMessage, isPending: isSending } = useSendMessage("call"); // Use "call" session type
-  const { mutate: clearChat } = useClearChat("call"); // Use "call" session type
+  
+  // Generate unique device ID for independent sessions per device
+  const deviceIdRef = useRef<string>(getDeviceId());
+  const sessionId = `call-${deviceIdRef.current}`; // Unique session per device
+  
+  const { data: messages } = useMessages(sessionId); // Use device-specific session
+  const { mutate: sendMessage, isPending: isSending } = useSendMessage(sessionId); // Use device-specific session
+  const { mutate: clearChat } = useClearChat(sessionId); // Use device-specific session
   
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -157,7 +163,7 @@ export default function VoiceCall() {
             // AI will respond with simple greeting
             setTimeout(() => {
               sendMessage(
-                { role: "user", content: "start", sessionType: "call" } as any,
+                { role: "user", content: "start", sessionType: sessionId } as any,
                 {
                   onSuccess: () => {
                     // The AI will generate the initial greeting
@@ -364,7 +370,7 @@ export default function VoiceCall() {
               // Send to AI - accept single words and phrases
               console.log("✅ Sending input to AI:", toSend);
               lastSentMessageRef.current = toSend;
-              sendMessage({ role: "user", content: toSend, sessionType: "call" } as any);
+              sendMessage({ role: "user", content: toSend, sessionType: sessionId } as any);
               
               // Clear transcript after sending
               setTimeout(() => {
