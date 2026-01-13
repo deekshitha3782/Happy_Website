@@ -255,11 +255,26 @@ export async function speakWithEdgeTTS(
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
     
-    // iOS Safari requires specific handling for audio playback
+    // Detect iOS (Safari, Chrome, Firefox, etc.)
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    const isIOSChrome = isIOS && /CriOS|Chrome/.test(navigator.userAgent);
+    
+    console.log(`🔊 Audio playback - iOS: ${isIOS}, iOS Chrome: ${isIOSChrome}`);
     
     // Set audio properties for iOS compatibility
     audio.preload = "auto";
+    audio.volume = 1.0; // Ensure volume is max
+    
+    // iOS Chrome requires specific settings for Audio element to work
+    if (isIOSChrome) {
+      // iOS Chrome needs these attributes for inline playback
+      audio.setAttribute('playsinline', 'true');
+      audio.setAttribute('webkit-playsinline', 'true');
+      (audio as any).playsInline = true;
+      (audio as any).webkitPlaysInline = true;
+      console.log("🔧 iOS Chrome: Set playsinline attributes for audio playback");
+    }
+    
     if (isIOS) {
       // iOS requires these settings for reliable playback
       (audio as any).webkitAudioContext = true;
@@ -275,8 +290,18 @@ export async function speakWithEdgeTTS(
     audio.load();
 
     audio.onplay = () => {
+      console.log("✅ Audio playback started successfully");
       if (!cancelled && onStart) onStart();
     };
+    
+    // Add canplay event for better iOS Chrome detection
+    audio.addEventListener('canplay', () => {
+      console.log("✅ Audio can play (canplay event fired)");
+    }, { once: true });
+    
+    audio.addEventListener('loadeddata', () => {
+      console.log("✅ Audio data loaded");
+    }, { once: true });
 
     audio.onended = () => {
       URL.revokeObjectURL(audioUrl);
@@ -305,47 +330,85 @@ export async function speakWithEdgeTTS(
       if (playAttempted || cancelled) return;
       playAttempted = true;
       
+      console.log("🎵 Attempting to play audio...");
       const playPromise = audio.play();
       
       if (playPromise !== undefined) {
-        playPromise.catch((error) => {
-          console.error("❌ Audio play() failed:", error);
+        playPromise.then(() => {
+          console.log("✅ Audio play() promise resolved - audio should be playing");
+        }).catch((error) => {
+          console.error("❌ Audio play() failed:", error, "Error name:", error.name);
           if (currentAudioInstance === audio) {
             currentAudioInstance = null;
           }
-          // iOS might block autoplay - fallback to browser TTS
+          // iOS might block autoplay - retry with user interaction context
           if (isIOS && (error.name === 'NotAllowedError' || error.name === 'NotSupportedError')) {
-            console.log("🔄 iOS blocked audio autoplay, falling back to browser TTS");
-            URL.revokeObjectURL(audioUrl);
-            if (currentAudioInstance === audio) {
-              currentAudioInstance = null;
-            }
-            // Fallback to browser TTS immediately (async, but we'll handle it)
-            usingBrowserTTS = true;
-            speakWithBrowserTTS(text, onStart, onEnd, onError).then((cancelFn) => {
-              browserTTSCancel = cancelFn;
-            }).catch((err) => {
-              console.error("Browser TTS also failed:", err);
-              if (!cancelled && onError) {
-                onError(err);
+            console.log("🔄 iOS blocked audio autoplay - retrying with different approach");
+            // Try again after a short delay - sometimes iOS needs a moment
+            setTimeout(() => {
+              if (!cancelled && !playAttempted) {
+                console.log("🔄 Retrying audio playback...");
+                playAttempted = false; // Reset to allow retry
+                const retryPromise = audio.play();
+                if (retryPromise !== undefined) {
+                  retryPromise.catch((retryError) => {
+                    console.error("❌ Audio retry also failed:", retryError);
+                    if (!cancelled && onError) {
+                      onError(new Error(`Audio playback failed: ${retryError.message}`));
+                    }
+                  });
+                }
               }
-            });
+            }, 300);
           } else if (!cancelled && onError) {
             onError(error);
           }
         });
+      } else {
+        console.log("⚠️ Audio play() returned undefined - browser may not support promises");
       }
     };
 
     // For iOS, wait for audio to be ready
     if (isIOS) {
-      audio.addEventListener('canplaythrough', playAudio, { once: true });
-      // Fallback: try playing after a short delay
-      setTimeout(() => {
-        if (!playAttempted && !cancelled) {
-          playAudio();
-        }
-      }, 100);
+      // iOS Chrome needs special handling - wait for loadeddata then play
+      if (isIOSChrome) {
+        console.log("🔄 iOS Chrome: Waiting for audio to load, then playing");
+        // Wait for audio to be fully loaded
+        audio.addEventListener('loadeddata', () => {
+          console.log("✅ iOS Chrome: Audio data loaded, attempting playback");
+          setTimeout(() => {
+            if (!playAttempted && !cancelled) {
+              playAudio();
+            }
+          }, 50);
+        }, { once: true });
+        
+        // Also try canplaythrough as backup
+        audio.addEventListener('canplaythrough', () => {
+          console.log("✅ iOS Chrome: Audio can play through, attempting playback");
+          if (!playAttempted && !cancelled) {
+            playAudio();
+          }
+        }, { once: true });
+        
+        // Fallback: try playing after a delay if events don't fire
+        setTimeout(() => {
+          if (!playAttempted && !cancelled) {
+            console.log("⏱️ iOS Chrome: Fallback timeout - attempting playback");
+            playAudio();
+          }
+        }, 500);
+      } else {
+        // iOS Safari - wait for canplaythrough
+        audio.addEventListener('canplaythrough', playAudio, { once: true });
+        // Fallback: try playing after a short delay
+        setTimeout(() => {
+          if (!playAttempted && !cancelled) {
+            playAudio();
+          }
+        }, 100);
+      }
     } else {
       // For other browsers, play immediately
       playAudio();
