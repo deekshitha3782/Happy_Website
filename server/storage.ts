@@ -8,8 +8,6 @@ export interface IStorage {
   clearMessages(sessionType?: string): Promise<void>;
 }
 
-import { eq } from "drizzle-orm";
-
 export class DatabaseStorage implements IStorage {
   async getMessages(sessionType?: string): Promise<Message[]> {
     try {
