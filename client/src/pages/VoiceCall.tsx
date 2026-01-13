@@ -385,7 +385,7 @@ export default function VoiceCall() {
       };
 
       // Auto-restart handler - NEVER RESTART IF AI IS SPEAKING
-      // iOS: Recognition may end naturally after silence - but DON'T restart to avoid mic access sound
+      // iOS: Recognition may end naturally after silence - restart silently without showing "Reconnecting"
       recognitionRef.current.onend = () => {
         // CRITICAL: NEVER restart if AI is speaking - mic must stay off
         if (isAISpeakingRef.current) {
@@ -394,34 +394,46 @@ export default function VoiceCall() {
           return; // Exit immediately - do not restart
         }
         
-        // iOS: Don't auto-restart to avoid mic access sound
-        // Recognition will be restarted manually when needed (after AI speaks, after user speaks)
-        if (isIOSSafari) {
-          console.log("🔇 iOS: Recognition ended - NOT auto-restarting to avoid mic access sound");
-          setIsListening(false);
-          return; // Don't auto-restart on iOS
-        }
-        
-        // Non-iOS: Auto-restart for continuous listening (only if AI is not speaking)
+        // Auto-restart for continuous listening (only if AI is not speaking)
         if (!isMuted && recognitionRef.current && !isAISpeakingRef.current) {
+          // iOS: Use longer delay to prevent rapid connect/disconnect cycles
+          const restartDelay = isIOSSafari ? 1000 : 500;
           setTimeout(() => {
             if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
               try {
+                // Check if recognition is already running (iOS quirk - onend can fire even when running)
+                // Only start if not already active
                 recognitionRef.current.start();
                 setIsListening(true);
+                // Don't change status to "Reconnecting" - keep it as "Connected" for smoother UX
                 console.log("✅ Recognition restarted silently (continuous listening)");
               } catch (e: any) {
                 // If already started, that's fine - don't show error
                 if (e.message && e.message.includes('already started')) {
-                  console.log("ℹ️ Recognition already running");
+                  console.log("ℹ️ Recognition already running (iOS quirk)");
                   setIsListening(true);
                   return;
                 }
                 console.log("Could not auto-restart:", e.message);
                 setIsListening(false);
+                // Only show "Reconnecting" if it's a real error (not just already started)
+                if (!e.message || !e.message.includes('already started')) {
+                  setCallStatus("Reconnecting...");
+                  // Auto-retry after delay
+                  setTimeout(() => {
+                    if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
+                      try {
+                        recognitionRef.current.start();
+                        setCallStatus("Connected");
+                      } catch (retryError) {
+                        console.log("Auto-retry failed:", retryError);
+                      }
+                    }
+                  }, 2000);
+                }
               }
             }
-          }, 500);
+          }, restartDelay);
         } else {
           setIsListening(false);
         }
@@ -592,16 +604,6 @@ export default function VoiceCall() {
           isAISpeakingRef.current = false; // Mark AI as finished
           console.log("✅ All TTS messages complete - mic can turn back on");
           if (recognitionRef.current && !isMuted) {
-            // iOS: Don't restart immediately - wait for user to speak (onend will handle it)
-            // This avoids the mic access sound on iOS
-            if (isIOSSafari) {
-              console.log("🎤 iOS: Mic ready - will start when user speaks (no sound)");
-              setIsListening(false); // Will be set to true when recognition actually starts
-              // Don't call start() here - let it start naturally when user speaks
-              return;
-            }
-            
-            // Non-iOS: Restart recognition normally
             setTimeout(() => {
               if (!isAISpeakingRef.current && recognitionRef.current && !isMuted) {
                 try {
@@ -642,16 +644,6 @@ export default function VoiceCall() {
           // Queue is empty - TURN MIC BACK ON
           isAISpeakingRef.current = false; // Mark AI as finished
           if (recognitionRef.current && !isMuted) {
-            // iOS: Don't restart immediately - wait for user to speak (onend will handle it)
-            // This avoids the mic access sound on iOS
-            if (isIOSSafari) {
-              console.log("🎤 iOS: Mic ready - will start when user speaks (no sound)");
-              setIsListening(false); // Will be set to true when recognition actually starts
-              // Don't call start() here - let it start naturally when user speaks
-              return;
-            }
-            
-            // Non-iOS: Restart recognition normally
             setTimeout(() => {
               if (!isAISpeakingRef.current && recognitionRef.current && !isMuted) {
                 try {
