@@ -47,6 +47,19 @@ export default function VoiceCall() {
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
+  // Enhanced iOS debugging (helps when testing remotely)
+  useEffect(() => {
+    console.log("📱 Device Detection:", {
+      isIOSSafari,
+      isSafari,
+      isMobile,
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      hasSpeechRecognition: !!(window as any).webkitSpeechRecognition || !!(window as any).SpeechRecognition,
+      hasWakeLock: 'wakeLock' in navigator,
+    });
+  }, [isIOSSafari, isSafari, isMobile]);
+
   // Wake Lock API - Prevent screen timeout (like commercial AI agents)
   useEffect(() => {
     const requestWakeLock = async () => {
