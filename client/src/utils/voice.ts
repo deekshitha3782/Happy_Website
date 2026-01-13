@@ -78,30 +78,52 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
   // ALWAYS get fresh voice list to ensure consistency
   const voices = window.speechSynthesis.getVoices();
   
-  // Priority list - try to find the same voice name across devices
+  // Priority list - try to find Indian English voices first, then fallback to others
   // These are common female voices that exist on multiple platforms
-  // Order matters: try most common/available first
+  // Order matters: try Indian English first, then others
   const preferredVoices = [
-    "Google US English Female",      // Chrome/Android (most common)
-    "Google UK English Female",      // Chrome/Android
-    "Microsoft Zira",               // Windows (very common)
-    "Microsoft Hazel",              // Windows
-    "Samantha",                      // macOS (very common)
-    "Karen",                         // macOS
-    "Moira",                         // macOS
-    "Tessa",                         // macOS
-    "Victoria",                      // macOS
+    "Google India English Female",   // Chrome/Android - Indian accent
+    "Google IN English Female",      // Chrome/Android - Indian accent variant
+    "Microsoft Ravi",                // Windows - Indian English (if available)
+    "Google US English Female",      // Chrome/Android (fallback)
+    "Google UK English Female",      // Chrome/Android (fallback)
+    "Microsoft Zira",               // Windows (fallback)
+    "Microsoft Hazel",              // Windows (fallback)
+    "Samantha",                      // macOS (fallback)
+    "Karen",                         // macOS (fallback)
+    "Moira",                         // macOS (fallback)
+    "Tessa",                         // macOS (fallback)
+    "Victoria",                      // macOS (fallback)
   ];
   
   let selectedVoice: SpeechSynthesisVoice | null = null;
   
-  // First, try to find a preferred voice by exact name match
-  for (const preferredName of preferredVoices) {
-    const voice = voices.find(v => v.name === preferredName);
-    if (voice) {
-      selectedVoice = voice;
-      console.log(`✅ Using preferred voice: ${voice.name} (${voice.lang || 'unknown lang'})`);
-      break;
+  // First, try to find voices with Indian English language code (en-IN)
+  const indianVoices = voices.filter(v => 
+    v.lang && (v.lang.toLowerCase() === 'en-in' || v.lang.toLowerCase().includes('in'))
+  );
+  
+  if (indianVoices.length > 0) {
+    // Prefer female Indian voices
+    const indianFemaleVoice = indianVoices.find(v => 
+      /female|woman|zira|ravi/i.test(v.name)
+    ) || indianVoices[0];
+    
+    if (indianFemaleVoice) {
+      selectedVoice = indianFemaleVoice;
+      console.log(`✅ Found Indian English voice: ${indianFemaleVoice.name} (${indianFemaleVoice.lang})`);
+    }
+  }
+  
+  // If no Indian voice found, try preferred voices by exact name match
+  if (!selectedVoice) {
+    for (const preferredName of preferredVoices) {
+      const voice = voices.find(v => v.name === preferredName);
+      if (voice) {
+        selectedVoice = voice;
+        console.log(`✅ Using preferred voice: ${voice.name} (${voice.lang || 'unknown lang'})`);
+        break;
+      }
     }
   }
   
@@ -115,6 +137,14 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
   
   if (selectedVoice) {
     utterance.voice = selectedVoice;
+    // Set language to Indian English if voice supports it
+    if (selectedVoice.lang) {
+      utterance.lang = selectedVoice.lang;
+    } else {
+      utterance.lang = 'en-IN'; // Default to Indian English
+    }
+  } else {
+    utterance.lang = 'en-IN'; // Default to Indian English if no voice selected
   }
   
   // CONSISTENT voice settings across all devices
@@ -123,7 +153,7 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
   utterance.pitch = 1.0;  // Same pitch on all devices
   utterance.volume = 0.95; // Same volume on all devices
   
-  console.log(`🎤 Voice configured: ${selectedVoice?.name || 'default'}, rate: ${utterance.rate}, pitch: ${utterance.pitch}, volume: ${utterance.volume}`);
+  console.log(`🎤 Voice configured: ${selectedVoice?.name || 'default'} (${utterance.lang}), rate: ${utterance.rate}, pitch: ${utterance.pitch}, volume: ${utterance.volume}`);
 }
 
 /**

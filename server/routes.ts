@@ -209,8 +209,8 @@ export async function registerRoutes(
         const textToSpeak = text.length > 200 ? text.substring(0, 200) : text;
         const encodedText = encodeURIComponent(textToSpeak);
         
-        // Try Google Translate TTS first
-        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob`;
+        // Try Google Translate TTS first - using Indian English accent (en-IN)
+        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en-IN&client=tw-ob`;
         
         console.log("🔊 Attempting Google Translate TTS for text:", textToSpeak.substring(0, 50) + "...");
         

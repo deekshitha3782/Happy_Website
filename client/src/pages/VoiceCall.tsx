@@ -152,11 +152,12 @@ export default function VoiceCall() {
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
       
-      // iOS Safari: Set language explicitly for better compatibility
+      // Set language to Indian English for better accent matching
       if (isIOSSafari || isMobile) {
-        recognitionRef.current.lang = 'en-US';
+        recognitionRef.current.lang = 'en-IN'; // Indian English
+      } else {
+        recognitionRef.current.lang = 'en-IN'; // Indian English for all devices
       }
-      // Don't set lang explicitly for desktop - let browser use default
       
       console.log("🎤 Speech recognition configured (same as chat recording):", {
         continuous: recognitionRef.current.continuous,
