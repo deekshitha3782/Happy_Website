@@ -45,7 +45,7 @@ export class DatabaseStorage implements IStorage {
       });
       const [message] = await db.insert(messages).values(messageWithSession as any).returning();
       console.log("DatabaseStorage.createMessage: Message created with ID", message.id);
-      return message;
+    return message;
     } catch (error) {
       console.error("DatabaseStorage.createMessage error:", error);
       throw error;
@@ -61,7 +61,7 @@ export class DatabaseStorage implements IStorage {
         console.log(`DatabaseStorage.clearMessages: Cleared messages for session: ${sessionType}`);
       } else {
         // Clear all messages (backward compatibility)
-        await db.delete(messages);
+    await db.delete(messages);
         console.log("DatabaseStorage.clearMessages: All messages cleared");
       }
     } catch (error) {

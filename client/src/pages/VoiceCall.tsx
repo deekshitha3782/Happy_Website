@@ -238,7 +238,7 @@ export default function VoiceCall() {
 
       // FIXED: Reliable speech recognition - use timeout to prevent hanging
       let pendingFinalTranscript = "";
-      
+
       recognitionRef.current.onresult = (event: any) => {
         // CRITICAL: Never process results if AI is speaking - completely ignore all input
         if (isAISpeakingRef.current) {
@@ -358,7 +358,7 @@ export default function VoiceCall() {
                 setTimeout(() => {
                   if (recognitionRef.current && !isMuted) {
                     try {
-                      recognitionRef.current.start();
+          recognitionRef.current.start();
                     } catch (retryError) {
                       console.log("Auto-retry failed:", retryError);
                     }
@@ -416,7 +416,7 @@ export default function VoiceCall() {
             setTimeout(() => {
               if (recognitionRef.current && !isMuted) {
                 try {
-                  recognitionRef.current.start();
+      recognitionRef.current.start();
                 } catch (retryError: any) {
                   console.log("Retry failed:", retryError.message);
                   setCallStatus("Microphone permission needed");
@@ -428,11 +428,11 @@ export default function VoiceCall() {
       }, 500);
     }
 
-          return () => {
+    return () => {
             // Complete cleanup when component unmounts or dependencies change
-            if (recognitionRef.current) {
+      if (recognitionRef.current) {
               try {
-                recognitionRef.current.stop();
+        recognitionRef.current.stop();
                 recognitionRef.current.abort(); // Force stop
               } catch (e) {
                 // Ignore errors if already stopped
@@ -453,10 +453,10 @@ export default function VoiceCall() {
             if (sendTimeoutRef.current) {
               clearTimeout(sendTimeoutRef.current);
               sendTimeoutRef.current = null;
-            }
-            window.speechSynthesis.cancel();
+      }
+      window.speechSynthesis.cancel();
             setIsListening(false);
-          };
+    };
   }, [sendMessage, isMuted]);
 
   // Function to process TTS queue - plays next message if queue is not empty
@@ -746,7 +746,7 @@ export default function VoiceCall() {
         <motion.p 
           className={cn(
             "text-xs sm:text-sm font-medium transition-all duration-300 flex items-center gap-2",
-            callStatus === "Connected" ? "text-green-400" : "text-slate-400"
+          callStatus === "Connected" ? "text-green-400" : "text-slate-400"
           )}
           animate={callStatus === "Connected" ? { scale: [1, 1.05, 1] } : {}}
           transition={{ duration: 2, repeat: Infinity }}
@@ -832,9 +832,9 @@ export default function VoiceCall() {
             >
               <motion.p 
                 className="text-sm sm:text-base md:text-lg text-slate-200 font-medium break-words"
-              >
-                "{transcript}"
-              </motion.p>
+            >
+              "{transcript}"
+            </motion.p>
             </motion.div>
           ) : isSending ? (
             <motion.div
@@ -854,7 +854,7 @@ export default function VoiceCall() {
                 <span className="w-2 h-2 bg-primary rounded-full" style={{ animationDelay: "0.4s" }} />
               </motion.div>
               <span className="text-slate-400 text-xs sm:text-sm tracking-widest uppercase font-bold">
-                Listening...
+              Listening...
               </span>
             </motion.div>
           ) : (
