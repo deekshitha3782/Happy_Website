@@ -385,6 +385,7 @@ export default function VoiceCall() {
       };
 
       // Auto-restart handler - NEVER RESTART IF AI IS SPEAKING
+      // iOS: Recognition may end naturally after silence - restart silently without showing "Reconnecting"
       recognitionRef.current.onend = () => {
         // CRITICAL: NEVER restart if AI is speaking - mic must stay off
         if (isAISpeakingRef.current) {
@@ -395,29 +396,44 @@ export default function VoiceCall() {
         
         // Auto-restart for continuous listening (only if AI is not speaking)
         if (!isMuted && recognitionRef.current && !isAISpeakingRef.current) {
+          // iOS: Use longer delay to prevent rapid connect/disconnect cycles
+          const restartDelay = isIOSSafari ? 1000 : 500;
           setTimeout(() => {
             if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
               try {
+                // Check if recognition is already running (iOS quirk - onend can fire even when running)
+                // Only start if not already active
                 recognitionRef.current.start();
                 setIsListening(true);
-                console.log("✅ Recognition restarted (continuous listening)");
+                // Don't change status to "Reconnecting" - keep it as "Connected" for smoother UX
+                console.log("✅ Recognition restarted silently (continuous listening)");
               } catch (e: any) {
+                // If already started, that's fine - don't show error
+                if (e.message && e.message.includes('already started')) {
+                  console.log("ℹ️ Recognition already running (iOS quirk)");
+                  setIsListening(true);
+                  return;
+                }
                 console.log("Could not auto-restart:", e.message);
                 setIsListening(false);
-                setCallStatus("Reconnecting...");
-                // Auto-retry after delay
-                setTimeout(() => {
-                  if (recognitionRef.current && !isMuted) {
-                    try {
-                      recognitionRef.current.start();
-                    } catch (retryError) {
-                      console.log("Auto-retry failed:", retryError);
+                // Only show "Reconnecting" if it's a real error (not just already started)
+                if (!e.message || !e.message.includes('already started')) {
+                  setCallStatus("Reconnecting...");
+                  // Auto-retry after delay
+                  setTimeout(() => {
+                    if (recognitionRef.current && !isMuted && !isAISpeakingRef.current) {
+                      try {
+                        recognitionRef.current.start();
+                        setCallStatus("Connected");
+                      } catch (retryError) {
+                        console.log("Auto-retry failed:", retryError);
+                      }
                     }
-                  }
-                }, 2000);
+                  }, 2000);
+                }
               }
             }
-          }, 500);
+          }, restartDelay);
         } else {
           setIsListening(false);
         }
