@@ -78,23 +78,41 @@ export function configureFemaleVoice(utterance: SpeechSynthesisUtterance): void 
   // ALWAYS get fresh voice list to ensure consistency
   const voices = window.speechSynthesis.getVoices();
   
-  // Priority list - try to find Indian English voices first, then fallback to others
+  // Priority list - try to find Indian English voices first, then iOS voices, then others
   // These are common female voices that exist on multiple platforms
-  // Order matters: try Indian English first, then others
-  const preferredVoices = [
-    "Google India English Female",   // Chrome/Android - Indian accent
-    "Google IN English Female",      // Chrome/Android - Indian accent variant
-    "Microsoft Ravi",                // Windows - Indian English (if available)
-    "Google US English Female",      // Chrome/Android (fallback)
-    "Google UK English Female",      // Chrome/Android (fallback)
-    "Microsoft Zira",               // Windows (fallback)
-    "Microsoft Hazel",              // Windows (fallback)
-    "Samantha",                      // macOS (fallback)
-    "Karen",                         // macOS (fallback)
-    "Moira",                         // macOS (fallback)
-    "Tessa",                         // macOS (fallback)
-    "Victoria",                      // macOS (fallback)
-  ];
+  // Order matters: try Indian English first, then iOS-specific, then others
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  
+  const preferredVoices = isIOS 
+    ? [
+        // iOS-specific voices (most reliable on iOS)
+        "Samantha",                      // iOS/macOS - very common, smooth female voice
+        "Karen",                         // iOS/macOS - calm female voice
+        "Moira",                         // iOS/macOS - gentle female voice
+        "Tessa",                         // iOS/macOS - soft female voice
+        "Victoria",                      // iOS/macOS - warm female voice
+        "Google India English Female",   // Chrome/Android - Indian accent
+        "Google IN English Female",      // Chrome/Android - Indian accent variant
+        "Google US English Female",      // Chrome/Android (fallback)
+        "Google UK English Female",      // Chrome/Android (fallback)
+        "Microsoft Zira",               // Windows (fallback)
+        "Microsoft Hazel",              // Windows (fallback)
+      ]
+    : [
+        // Non-iOS: Indian English first
+        "Google India English Female",   // Chrome/Android - Indian accent
+        "Google IN English Female",      // Chrome/Android - Indian accent variant
+        "Microsoft Ravi",                // Windows - Indian English (if available)
+        "Google US English Female",      // Chrome/Android (fallback)
+        "Google UK English Female",      // Chrome/Android (fallback)
+        "Microsoft Zira",               // Windows (fallback)
+        "Microsoft Hazel",              // Windows (fallback)
+        "Samantha",                      // macOS (fallback)
+        "Karen",                         // macOS (fallback)
+        "Moira",                         // macOS (fallback)
+        "Tessa",                         // macOS (fallback)
+        "Victoria",                      // macOS (fallback)
+      ];
   
   let selectedVoice: SpeechSynthesisVoice | null = null;
   
@@ -372,7 +390,14 @@ function speakWithBrowserTTS(
   // The queue system in VoiceCall.tsx ensures only one plays at a time
   
   const utterance = new SpeechSynthesisUtterance(text);
+  
+  // Configure with female voice and calm settings (especially important for iOS)
   configureFemaleVoice(utterance);
+  
+  // Ensure calm, smooth, sweet settings are applied (already in configureFemaleVoice, but double-check)
+  utterance.rate = 0.75;   // Calm, slow rate
+  utterance.pitch = 0.95;  // Sweet, gentle pitch
+  utterance.volume = 0.9;   // Smooth, calming volume
 
   if (onStart) {
     utterance.onstart = onStart;
