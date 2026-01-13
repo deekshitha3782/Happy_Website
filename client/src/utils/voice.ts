@@ -220,10 +220,19 @@ export async function speakWithEdgeTTS(
   onError?: (error: Error) => void
 ): Promise<() => void> {
   try {
+    // iOS Detection - Audio element is unreliable on iOS, use browser TTS directly
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    
+    if (isIOS) {
+      // iOS: Use browser TTS directly (more reliable than Audio element)
+      console.log("📱 iOS detected - using browser TTS for reliable playback");
+      return speakWithBrowserTTS(text, onStart, onEnd, onError);
+    }
+    
     // Note: We don't cancel previous audio here - let it finish naturally
     // The queue system in VoiceCall.tsx ensures only one plays at a time
     
-    // Try Edge TTS first (FREE, no API key needed!)
+    // Try cloud TTS first (FREE, no API key needed!)
     const response = await fetch("/api/tts", {
       method: "POST",
       headers: {
@@ -255,6 +264,12 @@ export async function speakWithEdgeTTS(
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
     
+    // iOS-specific: Set audio properties for better compatibility
+    if (isIOS) {
+      audio.preload = "auto";
+      audio.volume = 1.0;
+    }
+    
     // Store as current instance
     currentAudioInstance = audio;
 
@@ -277,19 +292,53 @@ export async function speakWithEdgeTTS(
       if (currentAudioInstance === audio) {
         currentAudioInstance = null; // Clear reference on error
       }
+      console.error("❌ Audio playback error on iOS, falling back to browser TTS:", e);
+      if (!cancelled) {
+        // Fallback to browser TTS on iOS audio errors
+        return speakWithBrowserTTS(text, onStart, onEnd, onError);
+      }
       if (!cancelled && onError) {
         onError(new Error("Audio playback failed"));
       }
     };
 
-    audio.play().catch((error) => {
-      if (currentAudioInstance === audio) {
-        currentAudioInstance = null; // Clear reference on play error
+    // For iOS, ensure audio context is active before playing
+    const playAudio = async () => {
+      try {
+        // Resume audio context if suspended (iOS requirement)
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContext) {
+          const audioContext = new AudioContext();
+          if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+            console.log("✅ Audio context resumed for iOS");
+          }
+        }
+      } catch (e) {
+        console.log("AudioContext not available or already active:", e);
       }
-      if (!cancelled && onError) {
-        onError(error);
+      
+      // Play audio
+      try {
+        await audio.play();
+        console.log("✅ Audio playing successfully");
+      } catch (playError: any) {
+        console.error("❌ Audio play() failed:", playError);
+        if (currentAudioInstance === audio) {
+          currentAudioInstance = null;
+        }
+        // If play fails (especially on iOS), fallback to browser TTS
+        if (!cancelled) {
+          console.log("🔄 Falling back to browser TTS due to play error");
+          return speakWithBrowserTTS(text, onStart, onEnd, onError);
+        }
+        if (!cancelled && onError) {
+          onError(playError);
+        }
       }
-    });
+    };
+
+    playAudio();
 
     // Return cancel function
     return () => {
@@ -303,7 +352,7 @@ export async function speakWithEdgeTTS(
     };
 
   } catch (error) {
-    console.error("Edge TTS error, falling back to browser TTS:", error);
+    console.error("TTS error, falling back to browser TTS:", error);
     // Fallback to browser TTS on error
     return speakWithBrowserTTS(text, onStart, onEnd, onError);
   }
