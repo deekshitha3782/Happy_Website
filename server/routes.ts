@@ -202,103 +202,17 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Text is required" });
       }
 
-      // Get YourVoice.com API key from environment variables
-      const yourVoiceApiKey = process.env.YOURVOICE_API_KEY;
-      
-      // Try YourVoice.com API first (if API key is configured)
-      if (yourVoiceApiKey && yourVoiceApiKey !== "your-api-key-here") {
-        try {
-          // Limit text length to avoid issues (split long text if needed)
-          const textToSpeak = text.length > 500 ? text.substring(0, 500) : text;
-          
-          console.log("🎤 Attempting YourVoice.com TTS for text:", textToSpeak.substring(0, 50) + "...");
-          
-          // YourVoice.com API integration
-          // NOTE: Adjust the API endpoint and request format based on YourVoice.com documentation
-          // Common patterns:
-          // - POST request with JSON body containing text and voice settings
-          // - API key in Authorization header or as a query parameter
-          // - Response is audio file (MP3, WAV, etc.)
-          
-          const yourVoiceApiUrl = process.env.YOURVOICE_API_URL || "https://api.yourvoice.com/v1/tts";
-          
-          // Prepare request body (adjust based on YourVoice.com API docs)
-          const requestBody = {
-            text: textToSpeak,
-            voice: process.env.YOURVOICE_VOICE_ID || "default", // Voice ID/name (e.g., "female-indian", "en-IN-female")
-            language: "en-IN", // Indian English
-            speed: 0.9, // Slightly slower for more natural speech
-            pitch: 1.0,
-            format: "mp3" // Audio format
-          };
-          
-          const response = await fetch(yourVoiceApiUrl, {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${yourVoiceApiKey}`, // Common pattern - adjust if different
-              // Alternative patterns (uncomment if needed):
-              // "X-API-Key": yourVoiceApiKey,
-              // "api-key": yourVoiceApiKey,
-              "Content-Type": "application/json",
-              "Accept": "audio/mpeg, audio/*;q=0.9",
-            },
-            body: JSON.stringify(requestBody),
-          });
-
-          if (response.ok) {
-            const contentType = response.headers.get("content-type");
-            
-            // Check if we got audio back
-            if (contentType && contentType.includes("audio")) {
-              const audioBuffer = await response.arrayBuffer();
-              
-              if (audioBuffer.byteLength > 0) {
-                console.log("✅ YourVoice.com TTS success:", audioBuffer.byteLength, "bytes");
-                const base64Audio = Buffer.from(audioBuffer).toString('base64');
-                
-                return res.status(200).json({
-                  audioContent: base64Audio,
-                  useBrowserTTS: false,
-                  format: contentType.includes("mp3") ? "audio/mpeg" : contentType || "audio/mpeg"
-                });
-              }
-            } else {
-              // Got non-audio response, might be JSON error
-              const responseText = await response.text().catch(() => "");
-              console.warn("⚠️ YourVoice.com TTS returned non-audio:", contentType, responseText.substring(0, 200));
-              
-              // Try to parse error message
-              try {
-                const errorData = JSON.parse(responseText);
-                console.error("YourVoice.com API error:", errorData);
-              } catch (e) {
-                // Not JSON, ignore
-              }
-            }
-          } else {
-            const errorText = await response.text().catch(() => "");
-            console.warn("⚠️ YourVoice.com TTS returned status:", response.status, response.statusText, errorText.substring(0, 200));
-          }
-          
-          // If YourVoice.com fails, fall through to fallback
-          throw new Error(`YourVoice.com TTS failed with status ${response.status}`);
-
-        } catch (yourVoiceError) {
-          console.error("❌ YourVoice.com TTS error:", yourVoiceError);
-          // Fall through to Google Translate fallback
-        }
-      } else {
-        console.log("⚠️ YourVoice.com API key not configured, using fallback TTS");
-      }
-
-      // Fallback: Google Translate TTS (FREE, no API key needed)
+      // Try multiple free TTS services for reliability
+      // Google Translate TTS - FREE, no API key needed
       try {
+        // Limit text length to avoid issues (split long text if needed)
         const textToSpeak = text.length > 200 ? text.substring(0, 200) : text;
         const encodedText = encodeURIComponent(textToSpeak);
         
+        // Try Google Translate TTS first - using Indian English accent (en-IN)
         const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en-IN&client=tw-ob`;
         
-        console.log("🔊 Attempting Google Translate TTS fallback for text:", textToSpeak.substring(0, 50) + "...");
+        console.log("🔊 Attempting Google Translate TTS for text:", textToSpeak.substring(0, 50) + "...");
         
         const response = await fetch(ttsUrl, {
           method: "GET",
@@ -312,11 +226,12 @@ export async function registerRoutes(
         if (response.ok) {
           const contentType = response.headers.get("content-type");
           
+          // Check if we got audio back
           if (contentType && contentType.includes("audio")) {
             const audioBuffer = await response.arrayBuffer();
             
             if (audioBuffer.byteLength > 0) {
-              console.log("✅ Google Translate TTS fallback success:", audioBuffer.byteLength, "bytes");
+              console.log("✅ Google Translate TTS success:", audioBuffer.byteLength, "bytes");
               const base64Audio = Buffer.from(audioBuffer).toString('base64');
               
               return res.status(200).json({
@@ -325,20 +240,29 @@ export async function registerRoutes(
                 format: "audio/mpeg"
               });
             }
+          } else {
+            // Got non-audio response, might be blocked
+            const responseText = await response.text().catch(() => "");
+            console.warn("⚠️ Google Translate TTS returned non-audio:", contentType, responseText.substring(0, 100));
           }
+        } else {
+          console.warn("⚠️ Google Translate TTS returned status:", response.status, response.statusText);
         }
         
+        // If Google Translate fails, try alternative: ResponsiveVoice (free tier)
+        console.log("🔄 Trying alternative TTS service...");
         throw new Error(`Google Translate TTS failed with status ${response.status}`);
 
-      } catch (fallbackError) {
-        console.error("❌ Fallback TTS error:", fallbackError);
+      } catch (ttsError) {
+        console.error("❌ TTS error:", ttsError);
         
-        // Final fallback: Browser TTS
+        // Try alternative: Use a simple text-to-speech service
+        // For now, fall back to browser TTS since free cloud TTS services are unreliable
         console.log("⚠️ All cloud TTS services failed, falling back to browser TTS");
         return res.status(200).json({ 
           useBrowserTTS: true,
           message: "Cloud TTS service unavailable, using browser TTS (device-specific voice)",
-          details: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+          details: ttsError instanceof Error ? ttsError.message : String(ttsError)
         });
       }
 
